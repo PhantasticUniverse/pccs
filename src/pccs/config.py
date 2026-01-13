@@ -54,12 +54,12 @@ class Config:
     D_base: float = 0.1
     alpha: float = 0.9
     
-    # Reactions
-    k1: float = 0.1
-    k2: float = 0.1
-    k3: float = 0.1
+    # Reactions (tuned for stable reaction cycle)
+    k1: float = 0.05  # Reduced from 0.1 to slow mass destruction
+    k2: float = 0.05  # Reduced from 0.1 to slow mass destruction
+    k3: float = 0.01  # Reduced from 0.1 to preserve C
     kappa: float = 2.0
-    epsilon: float = 0.01
+    epsilon: float = 0.001  # Reduced from 0.01 to minimize dissipation
     
     # Phase dynamics
     omega_0: float = 0.1
@@ -157,4 +157,31 @@ class Config:
             f"  omega_0={self.omega_0}, K_phase={self.K_phase}, chi={self.chi},\n"
             f"  B_thresh={self.B_thresh}, cos_thresh={self.cos_thresh}\n"
             f")"
+        )
+
+    # Parameter presets
+    @classmethod
+    def default(cls) -> "Config":
+        """Tuned working parameters - stable reaction cycle."""
+        return cls()
+
+    @classmethod
+    def original_prd(cls) -> "Config":
+        """Original PRD values (reaction cycle collapses without tuning)."""
+        return cls(
+            epsilon=0.01,
+            k1=0.1,
+            k2=0.1,
+            k3=0.1,
+        )
+
+    @classmethod
+    def high_activity(cls) -> "Config":
+        """Faster dynamics for quick exploration."""
+        return cls(
+            k1=0.08,
+            k2=0.08,
+            k3=0.02,
+            K_phase=0.7,
+            omega_0=0.15,
         )

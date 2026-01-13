@@ -160,17 +160,20 @@ With appropriate parameters, the system exhibits:
 
 ### Demonstrated Capabilities
 
-PCCS has been experimentally verified to exhibit:
+The system has been verified to exhibit:
 
-| Capability | Evidence | Experiment |
-|------------|----------|------------|
-| **Spiral Wave Emergence** | Self-organizing rotating patterns | Phase dynamics |
-| **Protocell Formation** | Closed B-based membranes | Center injection |
-| **Natural Division (Budding)** | Mother spawns independent daughter | Exp 6 |
-| **Multi-Generation Lineages** | Mother → Daughter → Granddaughter | Exp 7 |
-| **Competitive Selection** | Winner-take-all under shared resources | Exp 8b |
-| **Heritable Fitness Variation** | B_thresh differences = 2.5-3.8x advantage | Exp 9 |
-| **Observable Evolution** | 18.8% B_thresh adaptation over 50k steps | Exp 10 |
+| Capability | Mechanism |
+|------------|-----------|
+| **Spiral Waves** | Kuramoto oscillators + phase-gated chemistry |
+| **Closed Membranes** | B-concentration-based bonds around injection points |
+| **Protocell Formation** | Point-source injection creates bounded compartments |
+| **Natural Division** | Budding at offset > diffusion range |
+| **Multi-Generation Lineages** | Mother → Daughter → Granddaughter coexistence |
+| **Competitive Selection** | Shared resources create winner-take-all dynamics |
+| **Heritable Variation** | Per-cell B_thresh with mutation |
+| **Observable Evolution** | B_thresh adapts under selection pressure |
+
+See [FINDINGS.md](docs/FINDINGS.md) for detailed experimental results.
 
 This represents a complete proof-of-concept for artificial life evolution from first principles:
 - Reproduction (budding)

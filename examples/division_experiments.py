@@ -96,6 +96,7 @@ def apply_line_cut(state: CellState, x_position: int, width: int = 2) -> CellSta
         phase=state.phase,
         bonds=new_bonds,
         B_thresh=state.B_thresh,
+        k1=state.k1,
     )
 
 
@@ -1614,6 +1615,675 @@ def run_evolution_validation(output_dir: Path):
     return statistics
 
 
+def run_multiparameter_evolution(output_dir: Path, seed: int = 42, num_steps: int = 20000):
+    """
+    Experiment 11: Multi-Parameter Evolution with Tradeoffs.
+
+    Tests whether k1 (dimerization rate) evolves to an intermediate value,
+    indicating a genuine tradeoff in the fitness landscape.
+
+    Tradeoff hypothesis:
+    - High k1 = fast B production = rapid growth = good when resources abundant
+    - High k1 = fast A consumption = inefficient = bad when resources scarce
+    - Low k1 = slow growth but efficient resource use
+    - Optimal k1 should balance speed vs efficiency
+
+    Protocol:
+    1. Start protocell at center
+    2. Enable mutations for BOTH B_thresh AND k1
+    3. Run 20000 steps
+    4. Track both parameters over time
+
+    Success criteria:
+    - B_thresh should decrease (as before - lower is always better)
+    - k1 should NOT just minimize or maximize
+    - k1 should stabilize at intermediate value -> TRADEOFF EXISTS
+    """
+    print("=" * 60)
+    print("Experiment 11: Multi-Parameter Evolution (B_thresh + k1)")
+    print("=" * 60)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    config = Config(
+        grid_size=64,
+        injection_mode="center",
+        injection_rate=0.015,
+        injection_width=5,
+        B_thresh=0.25,  # Starting value
+        k1=0.05,  # Starting value (middle of range)
+        k2=0.05,
+        k3=0.01,
+        epsilon=0.001,
+        # Evolution parameters
+        mutation_rate=0.002,  # 0.2% of cells mutate per step
+        mutation_strength=0.02,  # ±0.02 for B_thresh
+        k1_mutation_strength=0.005,  # ±0.005 for k1 (smaller)
+        k1_min=0.01,
+        k1_max=0.15,
+    )
+
+    sim = Simulation(config, seed=seed)
+    history = []
+
+    H, W = config.grid_size, config.grid_size
+    print(f"\nMulti-parameter evolution setup:")
+    print(f"  Grid: {H}x{W}")
+    print(f"  Food source: CENTER (shared, creates selection pressure)")
+    print(f"  Starting B_thresh: {config.B_thresh}")
+    print(f"  Starting k1: {config.k1}")
+    print(f"  Mutation rate: {config.mutation_rate} ({config.mutation_rate*100:.1f}% per step)")
+    print(f"  B_thresh mutation: ±{config.mutation_strength}, bounds [{config.B_thresh_min}, {config.B_thresh_max}]")
+    print(f"  k1 mutation: ±{config.k1_mutation_strength}, bounds [{config.k1_min}, {config.k1_max}]")
+    print(f"\nHypotheses:")
+    print(f"  1. B_thresh should decrease (lower = easier bonds = better)")
+    print(f"  2. k1 should stabilize at INTERMEDIATE value (tradeoff: speed vs efficiency)")
+    print(f"     If k1 -> min (0.01): efficiency dominates, growth speed irrelevant")
+    print(f"     If k1 -> max (0.15): speed dominates, efficiency irrelevant")
+    print(f"     If k1 -> middle: TRADEOFF EXISTS!")
+
+    print(f"\nRunning {num_steps} steps...")
+
+    # Track both parameters' evolution
+    evolution_history = {
+        'steps': [],
+        'mean_B_thresh': [],
+        'mean_k1': [],
+        'mean_B_thresh_bonded': [],
+        'mean_k1_bonded': [],
+        'std_B_thresh': [],
+        'std_k1': [],
+        'min_B_thresh': [],
+        'max_B_thresh': [],
+        'min_k1': [],
+        'max_k1': [],
+        'total_bonds': [],
+    }
+
+    # Run with periodic snapshots
+    log_interval = 500
+    for phase in range(num_steps // 1000):
+        steps = 1000
+        sim.run(steps, callback=create_metrics_callback(history), callback_interval=log_interval)
+
+        # Track statistics for both parameters
+        B_thresh = sim.state.B_thresh
+        k1 = sim.state.k1
+
+        mean_B_thresh = float(mx.mean(B_thresh))
+        mean_k1 = float(mx.mean(k1))
+        std_B_thresh = float(mx.std(B_thresh))
+        std_k1 = float(mx.std(k1))
+
+        # Track bonded cells (where selection acts)
+        bonds_per_cell = mx.sum(sim.state.bonds, axis=-1)
+        bonded_mask = bonds_per_cell > 0
+        num_bonded = int(mx.sum(bonded_mask))
+
+        if num_bonded > 0:
+            mean_B_thresh_bonded = float(mx.sum(B_thresh * bonded_mask) / num_bonded)
+            mean_k1_bonded = float(mx.sum(k1 * bonded_mask) / num_bonded)
+        else:
+            mean_B_thresh_bonded = mean_B_thresh
+            mean_k1_bonded = mean_k1
+
+        total_bonds = history[-1]["total_bonds"] if history else 0
+
+        # Record data
+        evolution_history['steps'].append(sim.step_count)
+        evolution_history['mean_B_thresh'].append(mean_B_thresh)
+        evolution_history['mean_k1'].append(mean_k1)
+        evolution_history['mean_B_thresh_bonded'].append(mean_B_thresh_bonded)
+        evolution_history['mean_k1_bonded'].append(mean_k1_bonded)
+        evolution_history['std_B_thresh'].append(std_B_thresh)
+        evolution_history['std_k1'].append(std_k1)
+        evolution_history['min_B_thresh'].append(float(mx.min(B_thresh)))
+        evolution_history['max_B_thresh'].append(float(mx.max(B_thresh)))
+        evolution_history['min_k1'].append(float(mx.min(k1)))
+        evolution_history['max_k1'].append(float(mx.max(k1)))
+        evolution_history['total_bonds'].append(total_bonds)
+
+        print(f"  Step {sim.step_count}: B_thresh={mean_B_thresh_bonded:.4f}, k1={mean_k1_bonded:.4f}, bonds={total_bonds}")
+
+        # Save snapshots at key points
+        if phase in [0, 4, 9, 14, 19]:
+            save_state_images(sim.state, str(output_dir), f"multiparameter_step{sim.step_count:05d}", sim.step_count)
+
+    # Final analysis
+    initial_B_thresh = evolution_history['mean_B_thresh_bonded'][0]
+    final_B_thresh = evolution_history['mean_B_thresh_bonded'][-1]
+    B_thresh_change = final_B_thresh - initial_B_thresh
+
+    initial_k1 = evolution_history['mean_k1_bonded'][0]
+    final_k1 = evolution_history['mean_k1_bonded'][-1]
+    k1_change = final_k1 - initial_k1
+
+    # Determine where k1 ended up relative to bounds
+    k1_range = config.k1_max - config.k1_min
+    k1_position = (final_k1 - config.k1_min) / k1_range  # 0 = at min, 1 = at max
+
+    print(f"\n{'='*60}")
+    print("FINAL RESULTS - MULTI-PARAMETER EVOLUTION")
+    print(f"{'='*60}")
+    print(f"\nB_thresh (bonded cells):")
+    print(f"  Initial: {initial_B_thresh:.4f}")
+    print(f"  Final:   {final_B_thresh:.4f}")
+    print(f"  Change:  {B_thresh_change:+.4f} ({100*B_thresh_change/initial_B_thresh:+.1f}%)")
+
+    print(f"\nk1 (bonded cells):")
+    print(f"  Initial: {initial_k1:.4f}")
+    print(f"  Final:   {final_k1:.4f}")
+    print(f"  Change:  {k1_change:+.4f} ({100*k1_change/initial_k1:+.1f}%)")
+    print(f"  Position in range: {k1_position:.1%} (0%=min, 100%=max)")
+
+    # Interpret results
+    print(f"\n{'='*60}")
+    print("INTERPRETATION")
+    print(f"{'='*60}")
+
+    # B_thresh result
+    if B_thresh_change < -0.01:
+        print("✓ B_thresh decreased (as expected - lower is always better)")
+    else:
+        print("? B_thresh did not decrease significantly")
+
+    # k1 result - this is the key test
+    if k1_position < 0.2:  # Near minimum
+        print("✗ k1 evolved to MINIMUM - no tradeoff detected")
+        print("  Interpretation: Growth speed doesn't matter, only efficiency")
+        k1_result = "MINIMUM"
+    elif k1_position > 0.8:  # Near maximum
+        print("✗ k1 evolved to MAXIMUM - no tradeoff detected")
+        print("  Interpretation: Efficiency doesn't matter, only growth speed")
+        k1_result = "MAXIMUM"
+    else:  # Intermediate
+        print("✓ k1 stabilized at INTERMEDIATE value - TRADEOFF EXISTS!")
+        print("  Interpretation: Both speed and efficiency matter")
+        print("  The system navigates a 2D fitness landscape with genuine tradeoffs")
+        k1_result = "INTERMEDIATE"
+
+    # Create visualization: dual-axis plot
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+
+    steps = evolution_history['steps']
+    ax1.set_xlabel('Step')
+    ax1.set_ylabel('B_thresh (bonded)', color='tab:blue')
+    ax1.plot(steps, evolution_history['mean_B_thresh_bonded'], 'b-', label='B_thresh')
+    ax1.tick_params(axis='y', labelcolor='tab:blue')
+    ax1.axhline(y=config.B_thresh_min, color='b', linestyle='--', alpha=0.3, label='B_thresh min')
+    ax1.axhline(y=config.B_thresh_max, color='b', linestyle=':', alpha=0.3, label='B_thresh max')
+
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('k1 (bonded)', color='tab:red')
+    ax2.plot(steps, evolution_history['mean_k1_bonded'], 'r-', label='k1')
+    ax2.tick_params(axis='y', labelcolor='tab:red')
+    ax2.axhline(y=config.k1_min, color='r', linestyle='--', alpha=0.3, label='k1 min')
+    ax2.axhline(y=config.k1_max, color='r', linestyle=':', alpha=0.3, label='k1 max')
+
+    plt.title('Multi-Parameter Evolution: B_thresh and k1')
+    fig.tight_layout()
+    plt.savefig(output_dir / "multiparameter_evolution.png", dpi=150)
+    plt.close()
+    print(f"\nSaved plot to {output_dir / 'multiparameter_evolution.png'}")
+
+    # Save metrics
+    with open(output_dir / "multiparameter_metrics.json", "w") as f:
+        json.dump({
+            "config": {
+                "mutation_rate": config.mutation_rate,
+                "B_thresh_mutation_strength": config.mutation_strength,
+                "k1_mutation_strength": config.k1_mutation_strength,
+                "B_thresh_bounds": [config.B_thresh_min, config.B_thresh_max],
+                "k1_bounds": [config.k1_min, config.k1_max],
+                "initial_B_thresh": config.B_thresh,
+                "initial_k1": config.k1,
+                "num_steps": num_steps,
+            },
+            "evolution_history": evolution_history,
+            "final": {
+                "B_thresh": {
+                    "initial": initial_B_thresh,
+                    "final": final_B_thresh,
+                    "change": B_thresh_change,
+                },
+                "k1": {
+                    "initial": initial_k1,
+                    "final": final_k1,
+                    "change": k1_change,
+                    "position_in_range": k1_position,
+                    "result": k1_result,
+                },
+            }
+        }, f, indent=2)
+    print(f"Saved metrics to {output_dir / 'multiparameter_metrics.json'}")
+
+    return evolution_history
+
+
+def run_k1_attractor_test(output_dir: Path, seed: int = 42, num_steps: int = 20000):
+    """
+    Experiment 12: k1 Attractor Verification.
+
+    Tests whether k1≈0.05 is a genuine fitness optimum (attractor) by starting
+    from different initial values and checking for convergence.
+
+    Protocol:
+    1. Run with k1=0.12 (high end) - should decrease toward ~0.05
+    2. Run with k1=0.02 (low end) - should increase toward ~0.05
+
+    Success criteria:
+    - Both trajectories converge toward similar intermediate value
+    - This confirms k1 has a genuine fitness optimum, not just neutral drift
+    """
+    print("=" * 60)
+    print("Experiment 12: k1 Attractor Verification")
+    print("=" * 60)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print("\nHypothesis: k1≈0.05 is an attractor (fitness optimum)")
+    print("Test: Start from k1=0.12 (high) and k1=0.02 (low)")
+    print("Expected: Both should converge toward ~0.05")
+
+    results = {}
+    test_cases = [
+        (0.12, "high", "tab:red"),
+        (0.02, "low", "tab:blue"),
+    ]
+
+    for initial_k1, label, color in test_cases:
+        print(f"\n--- Running {label} start (k1={initial_k1}) ---")
+
+        config = Config(
+            grid_size=64,
+            injection_mode="center",
+            injection_rate=0.015,
+            injection_width=5,
+            B_thresh=0.25,
+            k1=initial_k1,  # Different starting point!
+            k2=0.05,
+            k3=0.01,
+            epsilon=0.001,
+            mutation_rate=0.002,
+            mutation_strength=0.02,
+            k1_mutation_strength=0.005,
+            k1_min=0.01,
+            k1_max=0.15,
+        )
+
+        sim = Simulation(config, seed=seed)
+        history = []
+
+        # Track evolution
+        evolution_data = {
+            'steps': [],
+            'mean_k1_bonded': [],
+            'mean_B_thresh_bonded': [],
+        }
+
+        log_interval = 500
+        for phase in range(num_steps // 1000):
+            sim.run(1000, callback=create_metrics_callback(history), callback_interval=log_interval, show_progress=False)
+
+            # Track bonded cells
+            bonds_per_cell = mx.sum(sim.state.bonds, axis=-1)
+            bonded_mask = bonds_per_cell > 0
+            num_bonded = int(mx.sum(bonded_mask))
+
+            if num_bonded > 0:
+                mean_k1_bonded = float(mx.sum(sim.state.k1 * bonded_mask) / num_bonded)
+                mean_B_thresh_bonded = float(mx.sum(sim.state.B_thresh * bonded_mask) / num_bonded)
+            else:
+                mean_k1_bonded = float(mx.mean(sim.state.k1))
+                mean_B_thresh_bonded = float(mx.mean(sim.state.B_thresh))
+
+            evolution_data['steps'].append(sim.step_count)
+            evolution_data['mean_k1_bonded'].append(mean_k1_bonded)
+            evolution_data['mean_B_thresh_bonded'].append(mean_B_thresh_bonded)
+
+            print(f"  Step {sim.step_count}: k1={mean_k1_bonded:.4f}")
+
+        results[label] = {
+            'initial_k1': initial_k1,
+            'final_k1': evolution_data['mean_k1_bonded'][-1],
+            'evolution': evolution_data,
+        }
+
+    # Analysis
+    print(f"\n{'='*60}")
+    print("RESULTS - k1 ATTRACTOR TEST")
+    print(f"{'='*60}")
+
+    high_initial = results['high']['initial_k1']
+    high_final = results['high']['final_k1']
+    low_initial = results['low']['initial_k1']
+    low_final = results['low']['final_k1']
+
+    print(f"\nHigh start (k1={high_initial}):")
+    print(f"  Final k1: {high_final:.4f}")
+    print(f"  Change: {high_final - high_initial:+.4f} ({100*(high_final - high_initial)/high_initial:+.1f}%)")
+
+    print(f"\nLow start (k1={low_initial}):")
+    print(f"  Final k1: {low_final:.4f}")
+    print(f"  Change: {low_final - low_initial:+.4f} ({100*(low_final - low_initial)/low_initial:+.1f}%)")
+
+    # Check convergence
+    convergence_gap = abs(high_final - low_final)
+    midpoint = (high_final + low_final) / 2
+
+    print(f"\nConvergence analysis:")
+    print(f"  Gap between final values: {convergence_gap:.4f}")
+    print(f"  Midpoint: {midpoint:.4f}")
+
+    # Determine outcome
+    high_moved_down = high_final < high_initial - 0.005
+    low_moved_up = low_final > low_initial + 0.005
+    converged = convergence_gap < 0.03  # Within 0.03 of each other
+
+    print(f"\n{'='*60}")
+    print("INTERPRETATION")
+    print(f"{'='*60}")
+
+    if high_moved_down and low_moved_up and converged:
+        print("✓ ATTRACTOR CONFIRMED!")
+        print(f"  Both trajectories converged toward k1≈{midpoint:.3f}")
+        print("  This is a genuine fitness optimum balancing speed vs efficiency")
+        result = "ATTRACTOR_CONFIRMED"
+    elif high_moved_down and low_moved_up:
+        print("◐ PARTIAL CONVERGENCE")
+        print(f"  Both moved toward center but haven't fully converged")
+        print(f"  Gap: {convergence_gap:.4f} (may need longer run)")
+        result = "PARTIAL_CONVERGENCE"
+    elif not high_moved_down and not low_moved_up:
+        print("✗ NO SELECTION PRESSURE")
+        print("  Neither trajectory moved significantly")
+        print("  k1 may be neutral (no fitness effect)")
+        result = "NO_SELECTION"
+    else:
+        print("? UNEXPECTED PATTERN")
+        print(f"  High moved down: {high_moved_down}")
+        print(f"  Low moved up: {low_moved_up}")
+        result = "UNEXPECTED"
+
+    # Create visualization
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot both trajectories
+    for label, color in [("high", "tab:red"), ("low", "tab:blue")]:
+        data = results[label]['evolution']
+        ax.plot(data['steps'], data['mean_k1_bonded'],
+                color=color, linewidth=2,
+                label=f"Start k1={results[label]['initial_k1']}")
+
+    # Reference lines
+    ax.axhline(y=0.05, color='green', linestyle='--', alpha=0.7, label='k1=0.05 (hypothesized attractor)')
+    ax.axhline(y=0.01, color='gray', linestyle=':', alpha=0.5, label='k1 bounds')
+    ax.axhline(y=0.15, color='gray', linestyle=':', alpha=0.5)
+
+    ax.set_xlabel('Step')
+    ax.set_ylabel('k1 (bonded cells)')
+    ax.set_title('k1 Attractor Test: Convergence from Different Starting Points')
+    ax.legend(loc='right')
+    ax.set_ylim(0, 0.16)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "k1_attractor_test.png", dpi=150)
+    plt.close()
+    print(f"\nSaved plot to {output_dir / 'k1_attractor_test.png'}")
+
+    # Save metrics
+    with open(output_dir / "k1_attractor_metrics.json", "w") as f:
+        json.dump({
+            "test_cases": {
+                "high": {
+                    "initial_k1": high_initial,
+                    "final_k1": high_final,
+                    "change": high_final - high_initial,
+                },
+                "low": {
+                    "initial_k1": low_initial,
+                    "final_k1": low_final,
+                    "change": low_final - low_initial,
+                },
+            },
+            "convergence": {
+                "gap": convergence_gap,
+                "midpoint": midpoint,
+                "high_moved_down": high_moved_down,
+                "low_moved_up": low_moved_up,
+                "converged": converged,
+            },
+            "result": result,
+            "evolution_data": {k: v['evolution'] for k, v in results.items()},
+        }, f, indent=2)
+    print(f"Saved metrics to {output_dir / 'k1_attractor_metrics.json'}")
+
+    return results
+
+
+def run_scarcity_tradeoff_test(output_dir: Path, seed: int = 42, num_steps: int = 20000):
+    """
+    Experiment 13: Scarcity-Induced k1 Tradeoff.
+
+    Tests whether resource scarcity creates selection pressure on k1.
+
+    Hypothesis: Under scarce resources, efficiency matters more.
+    - High k1 = fast reactions = wasteful = bad when resources limited
+    - Low k1 = slow reactions = efficient = good when resources limited
+
+    Protocol:
+    1. ABUNDANT (injection_rate=0.015): k1 should stay flat (neutral)
+    2. SCARCE (injection_rate=0.005): k1 should DECREASE if tradeoff exists
+
+    Both start at k1=0.10 (above the growth threshold, in "neutral" zone).
+    """
+    print("=" * 60)
+    print("Experiment 13: Scarcity-Induced k1 Tradeoff")
+    print("=" * 60)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print("\nHypothesis: Resource scarcity creates downward selection pressure on k1")
+    print("Test: Compare k1 evolution under abundant vs scarce conditions")
+    print("Expected:")
+    print("  - Abundant: k1 stays at ~0.10 (neutral, no pressure)")
+    print("  - Scarce: k1 DECREASES (efficiency now matters)")
+
+    results = {}
+    test_cases = [
+        (0.015, "abundant", "tab:green"),
+        (0.005, "scarce", "tab:orange"),
+    ]
+
+    for injection_rate, label, color in test_cases:
+        print(f"\n--- Running {label} condition (injection_rate={injection_rate}) ---")
+
+        config = Config(
+            grid_size=64,
+            injection_mode="center",
+            injection_rate=injection_rate,
+            injection_width=5,
+            B_thresh=0.25,
+            k1=0.10,  # Start high (above threshold, in "neutral" zone)
+            k2=0.05,
+            k3=0.01,
+            epsilon=0.001,
+            mutation_rate=0.002,
+            mutation_strength=0.02,
+            k1_mutation_strength=0.005,
+            k1_min=0.01,
+            k1_max=0.15,
+        )
+
+        sim = Simulation(config, seed=seed)
+        history = []
+
+        # Track evolution
+        evolution_data = {
+            'steps': [],
+            'mean_k1_bonded': [],
+            'mean_B_thresh_bonded': [],
+            'total_bonds': [],
+        }
+
+        log_interval = 500
+        for phase in range(num_steps // 1000):
+            sim.run(1000, callback=create_metrics_callback(history), callback_interval=log_interval, show_progress=False)
+
+            # Track bonded cells
+            bonds_per_cell = mx.sum(sim.state.bonds, axis=-1)
+            bonded_mask = bonds_per_cell > 0
+            num_bonded = int(mx.sum(bonded_mask))
+
+            if num_bonded > 0:
+                mean_k1_bonded = float(mx.sum(sim.state.k1 * bonded_mask) / num_bonded)
+                mean_B_thresh_bonded = float(mx.sum(sim.state.B_thresh * bonded_mask) / num_bonded)
+            else:
+                mean_k1_bonded = float(mx.mean(sim.state.k1))
+                mean_B_thresh_bonded = float(mx.mean(sim.state.B_thresh))
+
+            total_bonds = history[-1]["total_bonds"] if history else 0
+
+            evolution_data['steps'].append(sim.step_count)
+            evolution_data['mean_k1_bonded'].append(mean_k1_bonded)
+            evolution_data['mean_B_thresh_bonded'].append(mean_B_thresh_bonded)
+            evolution_data['total_bonds'].append(total_bonds)
+
+            print(f"  Step {sim.step_count}: k1={mean_k1_bonded:.4f}, bonds={total_bonds}")
+
+        results[label] = {
+            'injection_rate': injection_rate,
+            'initial_k1': 0.10,
+            'final_k1': evolution_data['mean_k1_bonded'][-1],
+            'final_bonds': evolution_data['total_bonds'][-1],
+            'evolution': evolution_data,
+        }
+
+    # Analysis
+    print(f"\n{'='*60}")
+    print("RESULTS - SCARCITY TRADEOFF TEST")
+    print(f"{'='*60}")
+
+    abundant = results['abundant']
+    scarce = results['scarce']
+
+    print(f"\nAbundant (injection_rate={abundant['injection_rate']}):")
+    print(f"  Initial k1: {abundant['initial_k1']:.4f}")
+    print(f"  Final k1: {abundant['final_k1']:.4f}")
+    print(f"  Change: {abundant['final_k1'] - abundant['initial_k1']:+.4f}")
+    print(f"  Final bonds: {abundant['final_bonds']}")
+
+    print(f"\nScarce (injection_rate={scarce['injection_rate']}):")
+    print(f"  Initial k1: {scarce['initial_k1']:.4f}")
+    print(f"  Final k1: {scarce['final_k1']:.4f}")
+    print(f"  Change: {scarce['final_k1'] - scarce['initial_k1']:+.4f}")
+    print(f"  Final bonds: {scarce['final_bonds']}")
+
+    # Check for differential selection
+    abundant_change = abundant['final_k1'] - abundant['initial_k1']
+    scarce_change = scarce['final_k1'] - scarce['initial_k1']
+    differential = scarce_change - abundant_change
+
+    print(f"\nDifferential analysis:")
+    print(f"  Abundant k1 change: {abundant_change:+.4f}")
+    print(f"  Scarce k1 change: {scarce_change:+.4f}")
+    print(f"  Difference (scarce - abundant): {differential:+.4f}")
+
+    # Determine outcome
+    print(f"\n{'='*60}")
+    print("INTERPRETATION")
+    print(f"{'='*60}")
+
+    scarce_decreased = scarce_change < -0.005
+    abundant_stable = abs(abundant_change) < 0.01
+    differential_negative = differential < -0.005
+
+    if scarce_decreased and abundant_stable:
+        print("✓ ENVIRONMENT-DEPENDENT TRADEOFF CONFIRMED!")
+        print("  - Abundant: k1 neutral (no selection pressure)")
+        print("  - Scarce: k1 selected DOWN (efficiency matters)")
+        print("  Conclusion: Fitness landscape changes with environment")
+        result = "TRADEOFF_CONFIRMED"
+    elif differential_negative:
+        print("◐ PARTIAL TRADEOFF")
+        print(f"  Scarce condition shows more downward pressure than abundant")
+        print(f"  Differential: {differential:+.4f}")
+        result = "PARTIAL_TRADEOFF"
+    elif scarce['final_bonds'] < abundant['final_bonds'] * 0.3:
+        print("? SCARCE CONDITION COLLAPSED")
+        print(f"  Scarce bonds ({scarce['final_bonds']}) << Abundant bonds ({abundant['final_bonds']})")
+        print("  Resources too scarce to maintain structures - can't measure selection")
+        result = "COLLAPSED"
+    else:
+        print("✗ NO DIFFERENTIAL SELECTION")
+        print("  Both conditions show similar k1 trajectories")
+        print("  Efficiency may not matter even under scarcity")
+        result = "NO_TRADEOFF"
+
+    # Create visualization
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Left plot: k1 trajectories
+    for label, color in [("abundant", "tab:green"), ("scarce", "tab:orange")]:
+        data = results[label]['evolution']
+        ax1.plot(data['steps'], data['mean_k1_bonded'],
+                color=color, linewidth=2,
+                label=f"{label.capitalize()} (rate={results[label]['injection_rate']})")
+
+    ax1.axhline(y=0.10, color='gray', linestyle='--', alpha=0.5, label='Starting k1')
+    ax1.axhline(y=0.01, color='gray', linestyle=':', alpha=0.3)
+    ax1.axhline(y=0.15, color='gray', linestyle=':', alpha=0.3)
+    ax1.set_xlabel('Step')
+    ax1.set_ylabel('k1 (bonded cells)')
+    ax1.set_title('k1 Evolution: Abundant vs Scarce Resources')
+    ax1.legend()
+    ax1.set_ylim(0, 0.16)
+
+    # Right plot: bond counts (to verify both conditions viable)
+    for label, color in [("abundant", "tab:green"), ("scarce", "tab:orange")]:
+        data = results[label]['evolution']
+        ax2.plot(data['steps'], data['total_bonds'],
+                color=color, linewidth=2,
+                label=f"{label.capitalize()}")
+
+    ax2.set_xlabel('Step')
+    ax2.set_ylabel('Total Bonds')
+    ax2.set_title('Structure Viability Check')
+    ax2.legend()
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "scarcity_tradeoff_test.png", dpi=150)
+    plt.close()
+    print(f"\nSaved plot to {output_dir / 'scarcity_tradeoff_test.png'}")
+
+    # Save metrics
+    with open(output_dir / "scarcity_tradeoff_metrics.json", "w") as f:
+        json.dump({
+            "test_cases": {
+                "abundant": {
+                    "injection_rate": abundant['injection_rate'],
+                    "initial_k1": abundant['initial_k1'],
+                    "final_k1": abundant['final_k1'],
+                    "k1_change": abundant_change,
+                    "final_bonds": abundant['final_bonds'],
+                },
+                "scarce": {
+                    "injection_rate": scarce['injection_rate'],
+                    "initial_k1": scarce['initial_k1'],
+                    "final_k1": scarce['final_k1'],
+                    "k1_change": scarce_change,
+                    "final_bonds": scarce['final_bonds'],
+                },
+            },
+            "differential": differential,
+            "result": result,
+            "evolution_data": {k: v['evolution'] for k, v in results.items()},
+        }, f, indent=2)
+    print(f"Saved metrics to {output_dir / 'scarcity_tradeoff_metrics.json'}")
+
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Protocell division experiments",
@@ -1621,9 +2291,9 @@ def main():
     )
     parser.add_argument(
         "--experiment", "-e",
-        choices=["1", "2", "3", "budding", "budding_barrier", "natural", "lineage", "competition", "fitness", "evolution", "validation", "all"],
+        choices=["1", "2", "3", "budding", "budding_barrier", "natural", "lineage", "competition", "fitness", "evolution", "multiparameter", "k1_attractor", "scarcity", "validation", "all"],
         default="all",
-        help="Which experiment to run (1, 2, 3, budding, budding_barrier, natural, lineage, competition, fitness, evolution, validation, or all). Note: 'validation' is excluded from 'all' due to ~3-7 hour runtime.",
+        help="Which experiment to run. Note: 'validation', 'k1_attractor', and 'scarcity' are excluded from 'all'.",
     )
     parser.add_argument(
         "--output-dir", "-o",
@@ -1682,6 +2352,20 @@ def main():
 
     if args.experiment in ("evolution", "all"):
         run_evolution_experiment(args.output_dir, args.seed)
+        print()
+
+    if args.experiment in ("multiparameter", "all"):
+        run_multiparameter_evolution(args.output_dir, args.seed)
+        print()
+
+    # NOTE: k1_attractor is EXCLUDED from "all" - run explicitly
+    if args.experiment == "k1_attractor":
+        run_k1_attractor_test(args.output_dir, args.seed)
+        print()
+
+    # NOTE: scarcity is EXCLUDED from "all" - run explicitly
+    if args.experiment == "scarcity":
+        run_scarcity_tradeoff_test(args.output_dir, args.seed)
         print()
 
     # NOTE: validation is EXCLUDED from "all" due to ~3-7 hour runtime

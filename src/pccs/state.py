@@ -30,6 +30,7 @@ class CellState:
         phase: Oscillator phase [0, 2π)
         bonds: Bond states {0, 1} for each direction [H, W, 4]
         B_thresh: Per-cell bond formation threshold [H, W]
+        k1: Per-cell dimerization rate (2A → 2B) [H, W]
     """
 
     A: mx.array
@@ -38,6 +39,7 @@ class CellState:
     phase: mx.array
     bonds: mx.array
     B_thresh: mx.array
+    k1: mx.array
     
     @property
     def shape(self) -> tuple[int, int]:
@@ -58,6 +60,7 @@ class CellState:
             phase=mx.array(self.phase),
             bonds=mx.array(self.bonds),
             B_thresh=mx.array(self.B_thresh),
+            k1=mx.array(self.k1),
         )
 
 
@@ -134,6 +137,9 @@ def create_initial_state(
     # Initialize B_thresh uniformly from config default
     B_thresh = mx.ones((H, W), dtype=mx.float32) * config.B_thresh
 
+    # Initialize k1 uniformly from config default
+    k1 = mx.ones((H, W), dtype=mx.float32) * config.k1
+
     # Optionally add a seed region with elevated concentrations
     if with_seed_region:
         center = H // 2
@@ -162,7 +168,7 @@ def create_initial_state(
         # Optionally synchronize phase in seed region
         phase = mx.where(in_seed, 0.0, phase)
     
-    return CellState(A=A, B=B, C=C, phase=phase, bonds=bonds, B_thresh=B_thresh)
+    return CellState(A=A, B=B, C=C, phase=phase, bonds=bonds, B_thresh=B_thresh, k1=k1)
 
 
 def create_uniform_state(
@@ -172,6 +178,7 @@ def create_uniform_state(
     C_val: float = 0.1,
     phase_val: float = 0.0,
     B_thresh_val: float = 0.25,
+    k1_val: float = 0.05,
 ) -> CellState:
     """
     Create a uniform state (useful for testing).
@@ -183,6 +190,7 @@ def create_uniform_state(
         C_val: Uniform C concentration
         phase_val: Uniform phase value
         B_thresh_val: Uniform B_thresh value
+        k1_val: Uniform k1 (dimerization rate) value
 
     Returns:
         CellState with uniform values
@@ -196,6 +204,7 @@ def create_uniform_state(
         phase=mx.ones((H, W)) * phase_val,
         bonds=mx.zeros((H, W, 4)),
         B_thresh=mx.ones((H, W)) * B_thresh_val,
+        k1=mx.ones((H, W)) * k1_val,
     )
 
 
@@ -267,6 +276,9 @@ def create_multi_seed_state(
     # Initialize B_thresh uniformly from config default
     B_thresh = mx.ones((H, W), dtype=mx.float32) * config.B_thresh
 
+    # Initialize k1 uniformly from config default
+    k1 = mx.ones((H, W), dtype=mx.float32) * config.k1
+
     # Default phases: evenly spaced in [0, 2π)
     if seed_phases is None:
         seed_phases = [i * 2.0 * 3.14159265 / num_seeds for i in range(num_seeds)]
@@ -325,7 +337,7 @@ def create_multi_seed_state(
         # Set phase to this seed's designated phase
         phase = mx.where(in_seed, seed_phases[i], phase)
 
-    return CellState(A=A, B=B, C=C, phase=phase, bonds=bonds, B_thresh=B_thresh)
+    return CellState(A=A, B=B, C=C, phase=phase, bonds=bonds, B_thresh=B_thresh, k1=k1)
 
 
 def ensure_symmetric_bonds(bonds: mx.array) -> mx.array:

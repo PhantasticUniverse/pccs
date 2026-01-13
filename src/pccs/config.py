@@ -83,6 +83,11 @@ class Config:
     B_thresh_min: float = 0.10  # Minimum allowed B_thresh after mutation
     B_thresh_max: float = 0.50  # Maximum allowed B_thresh after mutation
 
+    # k1 mutation parameters (for multi-parameter evolution)
+    k1_mutation_strength: float = 0.005  # Max size of k1 mutation (±), smaller than B_thresh
+    k1_min: float = 0.01  # Minimum allowed k1 after mutation
+    k1_max: float = 0.15  # Maximum allowed k1 after mutation
+
     # Resource injection
     injection_mode: str = "boundary"
     injection_rate: float = 0.01
@@ -133,6 +138,12 @@ class Config:
             raise ValueError(f"mutation_strength must be >= 0, got {self.mutation_strength}")
         if not 0 < self.B_thresh_min < self.B_thresh_max < 1:
             raise ValueError(f"B_thresh bounds must satisfy 0 < B_thresh_min < B_thresh_max < 1")
+
+        # k1 mutation parameter validation
+        if self.k1_mutation_strength < 0:
+            raise ValueError(f"k1_mutation_strength must be >= 0, got {self.k1_mutation_strength}")
+        if not 0 < self.k1_min < self.k1_max:
+            raise ValueError(f"k1 bounds must satisfy 0 < k1_min < k1_max")
 
         valid_modes = {"boundary", "uniform", "point_sources", "center", "competing", "budding", "lineage", "competition", "none"}
         if self.injection_mode not in valid_modes:

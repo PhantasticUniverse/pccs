@@ -496,21 +496,92 @@ This proves that evolution in PCCS is not noise - it is a robust, repeatable phe
 
 ---
 
-## Open Questions
+## Multi-Parameter Evolution (Phase 14)
 
-1. ~~**Lineage**: Can a daughter become a mother?~~ **ANSWERED: YES!** (Experiment 7)
+### Goal
+Test whether a second evolvable parameter (k1 dimerization rate) creates a 2D fitness landscape with tradeoffs.
 
-2. ~~**Resource competition**: With limited total A, do protocells compete?~~ **ANSWERED: YES!** (Experiment 8b) - Selection requires SHARED resources, not just scarcity
+### Implementation
+- Added per-cell `k1` to CellState (same pattern as B_thresh)
+- k1 used in reaction R1: 2A → 2B (dimerization)
+- Mutation parameters: k1_mutation_strength=0.005, bounds [0.01, 0.15]
 
-3. ~~**Heritable variation**: Do parameter differences create fitness differences?~~ **ANSWERED: YES!** (Experiment 9) - B_thresh variation creates 2.5-3.8x fitness advantage
+### Experiment 11: Multi-Parameter Evolution
+**Protocol**: 20,000 steps, center injection, track both B_thresh and k1
 
-4. **Membrane dynamics**: Can membranes exchange material? Merge? Break?
+**Results**:
+- B_thresh: 0.2485 → 0.2187 (-12%) ✓ decreased as expected
+- k1: 0.0496 → 0.0507 (+2%) - stayed near starting value
 
-5. **Phase-membrane coupling**: The current design has decoupled phase and membrane. Could a different design couple them productively?
+**Initial interpretation**: k1 stabilized at intermediate value → tradeoff exists?
 
-6. **Scaling**: What happens with many (10+) protocells? Do they tile the space? Form hierarchies?
+### Experiment 12: k1 Attractor Verification
+**Protocol**: Start k1 at different values (0.02 low, 0.12 high), see if they converge
 
-7. ~~**True inheritance**: Can we implement per-cell parameters that pass from parent to offspring with mutation?~~ **ANSWERED: YES!** (Phase 12) - Per-cell B_thresh with mutation system implemented
+**Results**:
+- High start (0.12): Stayed at 0.12 (no movement)
+- Low start (0.02): Increased to 0.026 (+32%)
+
+**Key insight**: k1 fitness is THRESHOLD-BASED, not peaked:
+- Below ~0.03: Selected against (can't grow fast enough)
+- Above ~0.03: Neutral (no further benefit or cost)
+
+### Experiment 13: Scarcity-Induced Tradeoff Test
+**Protocol**: Compare k1 evolution under abundant (0.015) vs scarce (0.005) injection
+
+**Results**: NO differential selection
+- Both conditions: k1 stayed flat at 0.10
+- Bond counts similar (372 vs 360)
+
+**Conclusion**: Efficiency doesn't matter even under moderate scarcity
+
+### Phase 14 Summary
+
+| Parameter | Fitness Landscape | Evidence |
+|-----------|-------------------|----------|
+| B_thresh | Monotonic (lower = always better) | -12% over 20k steps |
+| k1 | Threshold-based | Low selected against, high neutral |
+
+**Key insight**: Not all parameters have tradeoffs. k1's fitness effect is about growth SPEED, not EFFICIENCY. The system wastes resources without penalty because injection is continuous.
+
+### New Experiments Added
+- `--experiment multiparameter`: Two-parameter evolution
+- `--experiment k1_attractor`: Convergence test from different starting points
+- `--experiment scarcity`: Abundant vs scarce resource comparison
+
+---
+
+## Open Questions for Future Work
+
+### Answered Questions
+- ~~**Lineage**: Can a daughter become a mother?~~ **YES** (Experiment 7)
+- ~~**Resource competition**: Do protocells compete?~~ **YES** (Experiment 8b)
+- ~~**Heritable variation**: Do parameter differences create fitness differences?~~ **YES** (Experiment 9)
+- ~~**True inheritance**: Per-cell parameters with mutation?~~ **YES** (Phase 12)
+
+### Environment Design
+1. **Finite resources**: Would efficiency tradeoffs emerge without continuous injection?
+2. **Pulsed resources**: Periodic injection with long gaps - does hoarding become adaptive?
+3. **Spatial heterogeneity**: Different regions with different injection rates
+
+### Extended Dynamics
+4. **Longer timescales**: Does k1 show drift over 100k+ steps?
+5. **Higher mutation rates**: Faster exploration of parameter space
+6. **Multiple populations**: Isolated patches evolving independently, then mixing
+
+### New Interactions
+7. **Predator-prey**: Second species that consumes B (membrane component)
+8. **Cooperation**: Parameters that benefit neighbors (altruism)
+9. **Horizontal transfer**: Can parameter values spread between protocells?
+
+### Scaling
+10. **Large populations**: 10+ protocells - do they tile space? Form hierarchies?
+11. **3D extension**: Spherical protocells in 3D grid
+12. **Continuous space**: Remove grid discretization
+
+### Membrane Dynamics
+13. **Membrane exchange**: Can membranes exchange material? Merge? Break?
+14. **Phase-membrane coupling**: Could a different design couple phase and membrane productively?
 
 ---
 
@@ -547,6 +618,18 @@ Config(
     mutation_strength=0.02,   # Max ±0.02 per mutation
     B_thresh_min=0.10,        # Minimum allowed B_thresh
     B_thresh_max=0.50,        # Maximum allowed B_thresh
+)
+```
+
+Multi-parameter evolution (Phase 14):
+
+```python
+Config(
+    # ... base parameters above ...
+    k1=0.05,                  # Initial dimerization rate
+    k1_mutation_strength=0.005,  # Max ±0.005 per mutation
+    k1_min=0.01,              # Minimum allowed k1
+    k1_max=0.15,              # Maximum allowed k1
 )
 ```
 
@@ -624,4 +707,11 @@ The system now has all requirements for evolution:
 - Effect size d = 14.12 (massive)
 - R² values 0.88-0.91 (strong linear relationship)
 
-The system can now undergo **open-ended evolution** - protocells can adapt to their environment over time through mutation and selection. This has been **rigorously validated** across multiple independent runs.
+**Phase 14 Achievement**: Multi-parameter evolution framework:
+- Per-cell k1 (dimerization rate) added alongside B_thresh
+- Attractor test revealed threshold-based fitness landscape for k1
+- Scarcity test showed no efficiency tradeoff in current environment
+- Key insight: not all parameters have tradeoffs - k1 affects growth SPEED, not EFFICIENCY
+- System ready for more complex fitness landscapes with different environments
+
+The system can now undergo **open-ended evolution** - protocells can adapt to their environment over time through mutation and selection. This has been **rigorously validated** across multiple independent runs. The multi-parameter framework enables exploration of complex fitness landscapes, though the current environment produces a simpler landscape than hypothesized (monotonic for B_thresh, threshold-based for k1).

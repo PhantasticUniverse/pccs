@@ -89,6 +89,7 @@ class Simulation:
             phase=self.state.phase,
             bonds=self.state.bonds,
             B_thresh=self.state.B_thresh,
+            k1=self.state.k1,
         )
         
         # 3-4. Diffusion
@@ -108,6 +109,7 @@ class Simulation:
             phase=self.state.phase,
             bonds=self.state.bonds,
             B_thresh=self.state.B_thresh,
+            k1=self.state.k1,
         )
         dphase = compute_phase_update(diffused_state, self.config)
         phase = self.state.phase + dphase
@@ -119,14 +121,18 @@ class Simulation:
             phase=phase,
             bonds=self.state.bonds,
             B_thresh=self.state.B_thresh,
+            k1=self.state.k1,
         )
         bonds = compute_bond_updates(temp_state, self.config, step_key)
 
-        # 8. Apply mutations to B_thresh (if enabled)
+        # 8. Apply mutations to B_thresh and k1 (if enabled)
         B_thresh = self.state.B_thresh
+        k1 = self.state.k1
         if self.config.mutation_rate > 0:
-            self.rng_key, mutation_key = mx.random.split(self.rng_key)
-            B_thresh = self._apply_mutations(B_thresh, mutation_key)
+            self.rng_key, b_mutation_key = mx.random.split(self.rng_key)
+            B_thresh = self._apply_mutations(B_thresh, b_mutation_key)
+            self.rng_key, k1_mutation_key = mx.random.split(self.rng_key)
+            k1 = self._apply_k1_mutations(k1, k1_mutation_key)
 
         # 9. Clamp concentrations
         A = mx.clip(A, 0.0, 1.0)
@@ -137,7 +143,7 @@ class Simulation:
         phase = wrap_phase(phase)
 
         # Final state update
-        self.state = CellState(A=A, B=B, C=C, phase=phase, bonds=bonds, B_thresh=B_thresh)
+        self.state = CellState(A=A, B=B, C=C, phase=phase, bonds=bonds, B_thresh=B_thresh, k1=k1)
         self.step_count += 1
     
     def _inject_resources(self, A: mx.array) -> mx.array:
@@ -340,6 +346,43 @@ class Simulation:
         B_thresh = mx.clip(B_thresh, self.config.B_thresh_min, self.config.B_thresh_max)
 
         return B_thresh
+
+    def _apply_k1_mutations(self, k1: mx.array, rng_key: mx.array) -> mx.array:
+        """
+        Apply stochastic mutations to k1 (dimerization rate) array.
+
+        Each cell has a probability (mutation_rate) of mutating its k1
+        by a random amount in [-k1_mutation_strength, +k1_mutation_strength].
+
+        Args:
+            k1: Current per-cell k1 values [H, W]
+            rng_key: Random key for stochastic operations
+
+        Returns:
+            Updated k1 array (clamped to valid range)
+        """
+        H, W = k1.shape
+
+        # Generate mutation mask (which cells mutate this step)
+        rng_key, mask_key = mx.random.split(rng_key)
+        mutate_mask = mx.random.uniform(shape=(H, W), key=mask_key) < self.config.mutation_rate
+
+        # Generate mutation values (uniform in [-strength, +strength])
+        rng_key, delta_key = mx.random.split(rng_key)
+        delta = mx.random.uniform(
+            low=-self.config.k1_mutation_strength,
+            high=self.config.k1_mutation_strength,
+            shape=(H, W),
+            key=delta_key,
+        )
+
+        # Apply mutations where mask is True
+        k1 = k1 + mutate_mask * delta
+
+        # Clamp to valid range
+        k1 = mx.clip(k1, self.config.k1_min, self.config.k1_max)
+
+        return k1
 
     def run(
         self,

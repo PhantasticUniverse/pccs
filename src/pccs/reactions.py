@@ -69,8 +69,8 @@ def compute_reactions(
     G3 = phase_gate(state.phase, phi_3, config.kappa)
 
     # Compute reaction rates (mass action kinetics with phase gating)
-    # R1: 2A → 2B (dimerization)
-    r1 = config.k1 * state.A * state.A * G1
+    # R1: 2A → 2B (dimerization) - uses per-cell k1 for evolution
+    r1 = state.k1 * state.A * state.A * G1
 
     # R2: 2B → A + C (breakdown)
     r2 = config.k2 * state.B * state.B * G2
@@ -114,8 +114,8 @@ def compute_reaction_rates(
     G2 = phase_gate(state.phase, phi_2, config.kappa)
     G3 = phase_gate(state.phase, phi_3, config.kappa)
 
-    # R1: 2A → 2B
-    r1 = config.k1 * state.A * state.A * G1
+    # R1: 2A → 2B - uses per-cell k1 for evolution
+    r1 = state.k1 * state.A * state.A * G1
     # R2: 2B → A + C
     r2 = config.k2 * state.B * state.B * G2
     # R3: A + C → 2A

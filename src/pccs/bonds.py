@@ -26,32 +26,30 @@ def compute_bond_probability(
 ) -> mx.array:
     """
     Compute bond formation/persistence probability.
-    
-    P = σ(θ_B × (Bᵢ + Bⱼ - 2×B_thresh)) × σ(θ_φ × (cos(φᵢ - φⱼ) - cos_thresh))
-    
-    Both conditions must be satisfied for high probability.
-    
+
+    EXPERIMENTAL: B-only bond formation.
+    P = σ(θ_B × (Bᵢ + Bⱼ - 2×B_thresh))
+
+    Bonds form based solely on B concentration, independent of phase.
+    This allows bonds to span phase boundaries.
+
     Args:
         B_i: B concentration at cell i
         B_j: B concentration at neighbor j
-        phase_i: Phase at cell i
-        phase_j: Phase at neighbor j
+        phase_i: Phase at cell i (unused in B-only mode)
+        phase_j: Phase at neighbor j (unused in B-only mode)
         config: Simulation configuration
-    
+
     Returns:
         Bond probability at each cell
     """
-    # B concentration condition
+    # B concentration condition ONLY
     B_sum = B_i + B_j
     B_condition = sigmoid(config.theta_B * (B_sum - 2.0 * config.B_thresh))
-    
-    # Phase alignment condition
-    phase_diff = phase_i - phase_j
-    cos_diff = mx.cos(phase_diff)
-    phase_condition = sigmoid(config.theta_phi * (cos_diff - config.cos_thresh))
-    
-    # Combined probability (both conditions must be satisfied)
-    return B_condition * phase_condition
+
+    # Phase alignment requirement REMOVED
+    # Bonds can now form across phase boundaries
+    return B_condition
 
 
 def compute_bond_updates(

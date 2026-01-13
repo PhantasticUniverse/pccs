@@ -168,19 +168,19 @@ def create_uniform_state(
 ) -> CellState:
     """
     Create a uniform state (useful for testing).
-    
+
     Args:
         config: Simulation configuration
         A_val: Uniform A concentration
         B_val: Uniform B concentration
         C_val: Uniform C concentration
         phase_val: Uniform phase value
-    
+
     Returns:
         CellState with uniform values
     """
     H = W = config.grid_size
-    
+
     return CellState(
         A=mx.ones((H, W)) * A_val,
         B=mx.ones((H, W)) * B_val,
@@ -188,6 +188,132 @@ def create_uniform_state(
         phase=mx.ones((H, W)) * phase_val,
         bonds=mx.zeros((H, W, 4)),
     )
+
+
+def create_multi_seed_state(
+    config: Config,
+    seed: Optional[int] = None,
+    num_seeds: int = 4,
+    seed_phases: Optional[list[float]] = None,
+) -> CellState:
+    """
+    Create initial state with multiple seed regions.
+
+    Places seeds at quadrant centers with different starting phases.
+    This creates competing phase domains that may form closed membranes.
+
+    Args:
+        config: Simulation configuration
+        seed: Random seed for reproducibility
+        num_seeds: Number of seed regions (default 4 for quadrants)
+        seed_phases: Phase values for each seed (default: evenly spaced in [0, 2π))
+
+    Returns:
+        CellState with multiple synchronized seed regions
+    """
+    H = W = config.grid_size
+
+    # Set random seed
+    if seed is not None:
+        key = mx.random.key(seed)
+    else:
+        key = mx.random.key(42)
+
+    # Split key for each random operation
+    keys = mx.random.split(key, 4)
+
+    # Initialize concentrations with uniform random values
+    A = mx.random.uniform(
+        config.init_A_range[0],
+        config.init_A_range[1],
+        shape=(H, W),
+        key=keys[0],
+    )
+
+    B = mx.random.uniform(
+        config.init_B_range[0],
+        config.init_B_range[1],
+        shape=(H, W),
+        key=keys[1],
+    )
+
+    C = mx.random.uniform(
+        config.init_C_range[0],
+        config.init_C_range[1],
+        shape=(H, W),
+        key=keys[2],
+    )
+
+    # Initialize phase uniformly in [0, 2π)
+    phase = mx.random.uniform(
+        0.0,
+        2.0 * mx.pi,
+        shape=(H, W),
+        key=keys[3],
+    )
+
+    # Initialize bonds to zero
+    bonds = mx.zeros((H, W, 4), dtype=mx.float32)
+
+    # Default phases: evenly spaced in [0, 2π)
+    if seed_phases is None:
+        seed_phases = [i * 2.0 * 3.14159265 / num_seeds for i in range(num_seeds)]
+
+    # Seed positions at quadrant centers (for num_seeds=4)
+    # Layout:  [0] [1]
+    #          [2] [3]
+    if num_seeds == 4:
+        positions = [
+            (H // 4, W // 4),      # Top-left quadrant
+            (H // 4, 3 * W // 4),  # Top-right quadrant
+            (3 * H // 4, W // 4),  # Bottom-left quadrant
+            (3 * H // 4, 3 * W // 4),  # Bottom-right quadrant
+        ]
+    else:
+        # For other num_seeds, place in a grid pattern
+        import math
+        cols = int(math.ceil(math.sqrt(num_seeds)))
+        rows = int(math.ceil(num_seeds / cols))
+        positions = []
+        for i in range(num_seeds):
+            row = i // cols
+            col = i % cols
+            y = H * (row + 1) // (rows + 1)
+            x = W * (col + 1) // (cols + 1)
+            positions.append((y, x))
+
+    # Create coordinate grids
+    y_coords = mx.arange(H).reshape(-1, 1)
+    x_coords = mx.arange(W).reshape(1, -1)
+
+    half_size = config.seed_region_size // 2
+
+    # Apply each seed region
+    for i, (cy, cx) in enumerate(positions):
+        if i >= len(seed_phases):
+            break
+
+        # Define seed region boundaries
+        y_start = max(0, cy - half_size)
+        y_end = min(H, cy + half_size)
+        x_start = max(0, cx - half_size)
+        x_end = min(W, cx + half_size)
+
+        # Create mask for this seed region
+        in_seed = (
+            (y_coords >= y_start) & (y_coords < y_end) &
+            (x_coords >= x_start) & (x_coords < x_end)
+        )
+
+        # Set concentrations in seed region
+        A = mx.where(in_seed, config.seed_A, A)
+        B = mx.where(in_seed, config.seed_B, B)
+        C = mx.where(in_seed, config.seed_C, C)
+
+        # Set phase to this seed's designated phase
+        phase = mx.where(in_seed, seed_phases[i], phase)
+
+    return CellState(A=A, B=B, C=C, phase=phase, bonds=bonds)
 
 
 def ensure_symmetric_bonds(bonds: mx.array) -> mx.array:

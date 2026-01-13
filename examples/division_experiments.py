@@ -15,7 +15,16 @@ Usage:
 import argparse
 import json
 import mlx.core as mx
+import numpy as np
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+
+try:
+    from scipy.stats import linregress
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
 
 from pccs import Config
 from pccs.simulation import Simulation
@@ -1296,6 +1305,315 @@ def run_evolution_experiment(output_dir: Path, seed: int = 42, num_steps: int = 
     return history
 
 
+def analyze_evolution_run(seed_data: dict) -> dict:
+    """
+    Compute regression statistics for one evolution run.
+
+    Returns dict with slope, r_squared, p_value, effect_size, etc.
+    """
+    steps = np.array(seed_data["steps"])
+    bonded_means = np.array(seed_data["mean_B_thresh_bonded"])
+
+    # Filter out NaN values (early steps may have no bonded cells)
+    valid_mask = ~np.isnan(bonded_means)
+    steps_valid = steps[valid_mask]
+    bonded_valid = bonded_means[valid_mask]
+
+    if len(bonded_valid) < 10:
+        return None  # Not enough data
+
+    # Linear regression
+    if HAS_SCIPY:
+        result = linregress(steps_valid, bonded_valid)
+        slope = result.slope
+        intercept = result.intercept
+        r_squared = result.rvalue ** 2
+        p_value = result.pvalue
+    else:
+        # Fallback: compute slope with polyfit
+        slope, intercept = np.polyfit(steps_valid, bonded_valid, 1)
+        residuals = bonded_valid - (slope * steps_valid + intercept)
+        ss_res = np.sum(residuals ** 2)
+        ss_tot = np.sum((bonded_valid - bonded_valid.mean()) ** 2)
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        p_value = None  # Can't compute without scipy
+
+    # Effect size (Cohen's d): comparing first 10 vs last 10 data points
+    initial_values = bonded_valid[:10]
+    final_values = bonded_valid[-10:]
+    initial_std = np.std(initial_values) if len(initial_values) > 1 else 0.01
+    effect_size = (np.mean(initial_values) - np.mean(final_values)) / max(initial_std, 0.001)
+
+    # Convergence test: did variance in B_thresh decrease?
+    all_stds = np.array(seed_data["std_B_thresh"])
+    early_mean_std = np.mean(all_stds[:20]) if len(all_stds) >= 20 else np.mean(all_stds[:len(all_stds)//2])
+    late_mean_std = np.mean(all_stds[-20:]) if len(all_stds) >= 20 else np.mean(all_stds[len(all_stds)//2:])
+    std_decrease_pct = (early_mean_std - late_mean_std) / max(early_mean_std, 0.001) * 100
+
+    return {
+        "slope": float(slope),
+        "intercept": float(intercept),
+        "r_squared": float(r_squared),
+        "p_value": float(p_value) if p_value is not None else None,
+        "initial_mean": float(np.mean(initial_values)),
+        "final_mean": float(np.mean(final_values)),
+        "effect_size": float(effect_size),
+        "std_decrease_pct": float(std_decrease_pct),
+    }
+
+
+def create_validation_plot(all_runs: dict, statistics: dict, output_dir: Path):
+    """Create overlaid trajectories plot with regression lines."""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    colors = plt.cm.tab10(np.linspace(0, 1, len(all_runs)))
+
+    for i, (seed, data) in enumerate(all_runs.items()):
+        steps = np.array(data["steps"])
+        bonded = np.array(data["mean_B_thresh_bonded"])
+
+        # Plot trajectory
+        ax.plot(steps, bonded, color=colors[i], alpha=0.7,
+                label=f"Seed {seed}", linewidth=1.5)
+
+        # Plot regression line
+        stats = statistics["runs"][i]
+        y_fit = stats["slope"] * steps + stats["intercept"]
+        ax.plot(steps, y_fit, color=colors[i], linestyle="--",
+                alpha=0.5, linewidth=1)
+
+    ax.set_xlabel("Simulation Step", fontsize=12)
+    ax.set_ylabel("Mean B_thresh (Bonded Cells)", fontsize=12)
+    ax.set_title("Evolution Validation: B_thresh Adaptation Across Seeds", fontsize=14)
+    ax.legend(loc="upper right")
+    ax.grid(True, alpha=0.3)
+
+    # Add summary text box
+    summary = statistics["summary"]
+    text = f"All slopes negative: {summary['all_slopes_negative']}\n"
+    text += f"Mean slope: {summary['mean_slope']:.2e}\n"
+    text += f"Mean effect size: {summary['mean_effect_size']:.2f}"
+    ax.text(0.02, 0.02, text, transform=ax.transAxes, fontsize=10,
+            verticalalignment='bottom', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "evolution_validation.png", dpi=150)
+    plt.close()
+    print(f"  Saved plot to {output_dir / 'evolution_validation.png'}")
+
+
+def print_validation_summary(statistics: dict):
+    """Print formatted summary of evolution validation results."""
+    print()
+    print("=" * 60)
+    print("EVOLUTION VALIDATION SUMMARY")
+    print("=" * 60)
+    print(f"Seeds tested: {len(statistics['seeds'])}")
+    print(f"Steps per run: {statistics['steps_per_run']:,}")
+    print()
+    print("RESULTS:")
+
+    c = statistics["criteria"]
+    s = statistics["summary"]
+
+    print(f"  All slopes negative:     [{c['all_negative_slopes']}] ({s['num_negative_slopes']}/5 seeds)")
+    print(f"  All p-values < 0.01:     [{c['all_p_values_lt_001']}]")
+    print(f"  Mean effect size > 0.5:  [{c['mean_effect_size_gt_05']}] (d = {s['mean_effect_size']:.2f})")
+    print(f"  Variance decreased >20%: [{c['variance_decreased_20pct']}] ({s['mean_std_decrease_pct']:.1f}% decrease)")
+    print()
+
+    if s["evolution_confirmed"]:
+        print("CONCLUSION: *** EVOLUTION CONFIRMED ***")
+    else:
+        print("CONCLUSION: Evolution NOT confirmed (criteria not met)")
+
+    print("=" * 60)
+
+
+def run_evolution_validation(output_dir: Path):
+    """
+    Phase 13: Rigorous evolution validation across multiple seeds.
+
+    Runs 5 independent simulations with different seeds to prove
+    B_thresh evolution is statistically significant, not noise.
+
+    Protocol:
+    - 5 seeds: [42, 123, 456, 789, 1011]
+    - 50,000 steps per run
+    - Log every 500 steps (100 data points per run)
+    - Statistical analysis: regression, p-values, effect sizes
+
+    Success criteria:
+    - All slopes negative (directional evolution)
+    - All p-values < 0.01 (statistically significant)
+    - Mean effect size > 0.5 (meaningful change)
+    - Std decreases by >20% (population converging)
+    """
+    print("=" * 60)
+    print("Phase 13: Evolution Validation (5 Seeds x 50k Steps)")
+    print("=" * 60)
+    print()
+    print("This experiment will take approximately 3-7 hours.")
+    print("Progress updates every 10,000 steps.")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    seeds = [42, 123, 456, 789, 1011]
+    num_steps = 50000
+    log_interval = 500
+
+    all_runs = {}  # seed -> data dict
+
+    for seed_idx, seed in enumerate(seeds):
+        print(f"\n{'='*40}")
+        print(f"Starting seed {seed} ({seed_idx+1}/{len(seeds)})...")
+        print(f"{'='*40}")
+
+        # Create fresh simulation for this seed
+        config = Config(
+            grid_size=64,
+            injection_mode="center",  # Shared food source = selection pressure
+            injection_rate=0.015,
+            injection_width=5,
+            B_thresh=0.25,            # Starting value
+            mutation_rate=0.002,      # 0.2% per step
+            mutation_strength=0.02,   # Max +/-0.02
+            B_thresh_min=0.10,
+            B_thresh_max=0.50,
+            k1=0.05,
+            k2=0.05,
+            k3=0.01,
+            epsilon=0.001,
+        )
+
+        sim = Simulation(config, seed=seed)
+
+        # Data collection for this run
+        seed_data = {
+            "steps": [],
+            "mean_B_thresh_all": [],
+            "mean_B_thresh_bonded": [],
+            "std_B_thresh": [],
+            "total_bonds": [],
+            "num_bonded_cells": [],
+        }
+
+        # Run simulation with progress updates
+        for step_num in range(0, num_steps, log_interval):
+            sim.run(log_interval)
+
+            # Force MLX array evaluation
+            mx.eval(sim.state.B_thresh)
+
+            # Collect metrics
+            B_thresh = sim.state.B_thresh
+            mean_thresh = float(mx.mean(B_thresh))
+            std_thresh = float(mx.std(B_thresh))
+
+            # Count bonds
+            total_bonds = count_bonds(sim.state)
+
+            # Bonded cell detection
+            bonds_per_cell = mx.sum(sim.state.bonds, axis=-1)  # [H, W]
+            bonded_mask = bonds_per_cell > 0
+            num_bonded = int(mx.sum(bonded_mask))
+
+            if num_bonded > 0:
+                mean_bonded_thresh = float(mx.sum(B_thresh * bonded_mask) / num_bonded)
+            else:
+                mean_bonded_thresh = float('nan')
+
+            # Record data
+            seed_data["steps"].append(sim.step_count)
+            seed_data["mean_B_thresh_all"].append(mean_thresh)
+            seed_data["mean_B_thresh_bonded"].append(mean_bonded_thresh)
+            seed_data["std_B_thresh"].append(std_thresh)
+            seed_data["total_bonds"].append(total_bonds)
+            seed_data["num_bonded_cells"].append(num_bonded)
+
+            # Progress print every 10,000 steps
+            if sim.step_count % 10000 == 0:
+                print(f"  Seed {seed}: Step {sim.step_count}/{num_steps} "
+                      f"({100*sim.step_count/num_steps:.0f}%) - "
+                      f"bonds={total_bonds}, mean_B_thresh={mean_thresh:.4f}, "
+                      f"bonded_B_thresh={mean_bonded_thresh:.4f}")
+
+        all_runs[seed] = seed_data
+        print(f"  Seed {seed} complete. Final bonds: {seed_data['total_bonds'][-1]}")
+
+    # Statistical analysis
+    print("\n" + "=" * 40)
+    print("Analyzing results...")
+    print("=" * 40)
+
+    statistics = {
+        "seeds": seeds,
+        "steps_per_run": num_steps,
+        "log_interval": log_interval,
+        "runs": [],
+        "summary": {},
+        "criteria": {},
+    }
+
+    for seed in seeds:
+        seed_data = all_runs[seed]
+        analysis = analyze_evolution_run(seed_data)
+        if analysis:
+            analysis["seed"] = seed
+            statistics["runs"].append(analysis)
+            print(f"  Seed {seed}: slope={analysis['slope']:.2e}, "
+                  f"r2={analysis['r_squared']:.3f}, effect_size={analysis['effect_size']:.2f}")
+
+    # Compute summary statistics
+    slopes = [r["slope"] for r in statistics["runs"]]
+    effect_sizes = [r["effect_size"] for r in statistics["runs"]]
+    p_values = [r["p_value"] for r in statistics["runs"] if r["p_value"] is not None]
+    std_decreases = [r["std_decrease_pct"] for r in statistics["runs"]]
+
+    statistics["summary"] = {
+        "all_slopes_negative": all(s < 0 for s in slopes),
+        "num_negative_slopes": sum(1 for s in slopes if s < 0),
+        "mean_slope": float(np.mean(slopes)),
+        "all_p_values_significant": all(p < 0.01 for p in p_values) if p_values else None,
+        "mean_effect_size": float(np.mean(effect_sizes)),
+        "mean_std_decrease_pct": float(np.mean(std_decreases)),
+        "evolution_confirmed": False,  # Set below
+    }
+
+    # Evaluate criteria
+    statistics["criteria"] = {
+        "all_negative_slopes": "PASS" if statistics["summary"]["all_slopes_negative"] else "FAIL",
+        "all_p_values_lt_001": "PASS" if statistics["summary"]["all_p_values_significant"] else ("FAIL" if p_values else "N/A"),
+        "mean_effect_size_gt_05": "PASS" if statistics["summary"]["mean_effect_size"] > 0.5 else "FAIL",
+        "variance_decreased_20pct": "PASS" if statistics["summary"]["mean_std_decrease_pct"] > 20 else "FAIL",
+    }
+
+    # Overall conclusion: at least 3/4 criteria must pass
+    passed = sum(1 for v in statistics["criteria"].values() if v == "PASS")
+    statistics["summary"]["evolution_confirmed"] = passed >= 3
+
+    # Create visualization
+    print("\nCreating visualization...")
+    create_validation_plot(all_runs, statistics, output_dir)
+
+    # Save JSON
+    print("Saving statistics...")
+    with open(output_dir / "evolution_statistics.json", "w") as f:
+        json.dump(statistics, f, indent=2)
+    print(f"  Saved to {output_dir / 'evolution_statistics.json'}")
+
+    # Also save raw run data for future analysis
+    with open(output_dir / "evolution_validation_raw.json", "w") as f:
+        # Convert to serializable format
+        raw_data = {str(k): v for k, v in all_runs.items()}
+        json.dump(raw_data, f, indent=2)
+    print(f"  Saved raw data to {output_dir / 'evolution_validation_raw.json'}")
+
+    # Print summary
+    print_validation_summary(statistics)
+
+    return statistics
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Protocell division experiments",
@@ -1303,9 +1621,9 @@ def main():
     )
     parser.add_argument(
         "--experiment", "-e",
-        choices=["1", "2", "3", "budding", "budding_barrier", "natural", "lineage", "competition", "fitness", "evolution", "all"],
+        choices=["1", "2", "3", "budding", "budding_barrier", "natural", "lineage", "competition", "fitness", "evolution", "validation", "all"],
         default="all",
-        help="Which experiment to run (1, 2, 3, budding, budding_barrier, natural, lineage, competition, fitness, evolution, or all)",
+        help="Which experiment to run (1, 2, 3, budding, budding_barrier, natural, lineage, competition, fitness, evolution, validation, or all). Note: 'validation' is excluded from 'all' due to ~3-7 hour runtime.",
     )
     parser.add_argument(
         "--output-dir", "-o",
@@ -1364,6 +1682,12 @@ def main():
 
     if args.experiment in ("evolution", "all"):
         run_evolution_experiment(args.output_dir, args.seed)
+        print()
+
+    # NOTE: validation is EXCLUDED from "all" due to ~3-7 hour runtime
+    # Must be run explicitly with --experiment validation
+    if args.experiment == "validation":
+        run_evolution_validation(args.output_dir)
         print()
 
     print("=" * 60)

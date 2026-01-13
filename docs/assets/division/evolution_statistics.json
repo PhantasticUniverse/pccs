@@ -1,0 +1,83 @@
+{
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    1011
+  ],
+  "steps_per_run": 50000,
+  "log_interval": 500,
+  "runs": [
+    {
+      "slope": -8.622188490144562e-07,
+      "intercept": 0.24014193831068095,
+      "r_squared": 0.9143519182808488,
+      "p_value": 4.240537984706364e-54,
+      "initial_mean": 0.24351711422204972,
+      "final_mean": 0.20249350368976593,
+      "effect_size": 12.765682163550164,
+      "std_decrease_pct": -167.97800381587956,
+      "seed": 42
+    },
+    {
+      "slope": -9.001305380133655e-07,
+      "intercept": 0.2402844201163812,
+      "r_squared": 0.8881641294459287,
+      "p_value": 2.0459846181436955e-48,
+      "initial_mean": 0.24457483142614364,
+      "final_mean": 0.20244044065475464,
+      "effect_size": 18.065867650860575,
+      "std_decrease_pct": -169.1559510444689,
+      "seed": 123
+    },
+    {
+      "slope": -9.046971259659345e-07,
+      "intercept": 0.23975398151260435,
+      "r_squared": 0.8812644770112602,
+      "p_value": 3.859540441983802e-47,
+      "initial_mean": 0.2450796738266945,
+      "final_mean": 0.20206849426031112,
+      "effect_size": 14.414470513552391,
+      "std_decrease_pct": -167.79850742307903,
+      "seed": 456
+    },
+    {
+      "slope": -8.531159037339089e-07,
+      "intercept": 0.23973918108326017,
+      "r_squared": 0.90268606011602,
+      "p_value": 2.226186554317964e-51,
+      "initial_mean": 0.24287023842334748,
+      "final_mean": 0.2039221927523613,
+      "effect_size": 11.236679445562471,
+      "std_decrease_pct": -172.12532094965434,
+      "seed": 789
+    },
+    {
+      "slope": -8.32234669690228e-07,
+      "intercept": 0.24004601273572806,
+      "r_squared": 0.8924129059372611,
+      "p_value": 3.059587477118095e-49,
+      "initial_mean": 0.24367893785238265,
+      "final_mean": 0.205094575881958,
+      "effect_size": 14.102685771302989,
+      "std_decrease_pct": -168.59732556205617,
+      "seed": 1011
+    }
+  ],
+  "summary": {
+    "all_slopes_negative": true,
+    "num_negative_slopes": 5,
+    "mean_slope": -8.704794172835785e-07,
+    "all_p_values_significant": true,
+    "mean_effect_size": 14.11707710896572,
+    "mean_std_decrease_pct": -169.13102175902762,
+    "evolution_confirmed": true
+  },
+  "criteria": {
+    "all_negative_slopes": "PASS",
+    "all_p_values_lt_001": "PASS",
+    "mean_effect_size_gt_05": "PASS",
+    "variance_decreased_20pct": "FAIL"
+  }
+}

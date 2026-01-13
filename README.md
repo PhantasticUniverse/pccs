@@ -17,9 +17,10 @@ Real metabolism operates through precisely timed reaction cascades, not random d
 ## Features
 
 - **Phase-Gated Reactions**: Chemical reactions only proceed efficiently when the cell's internal oscillator is at the right phase
-- **Emergent Membranes**: Bond formation requires both structural molecules AND phase synchronization
+- **Emergent Spiral Waves**: Phase dynamics naturally produce spiral wave patterns
+- **Protocell Formation**: B-concentration-based bonds create closed membrane structures
+- **Multi-Protocell Systems**: Multiple protocells can coexist and maintain boundaries
 - **Kuramoto Synchronization**: Coupled oscillator dynamics create synchronized domains
-- **Thermodynamic Grounding**: Energy dissipation ensures genuine selection pressure
 - **Apple Silicon Optimized**: Built on MLX for maximum performance on M-series chips
 
 ## Installation
@@ -99,6 +100,7 @@ python -m pccs.main --save-frames output/
 
 ## Documentation
 
+- **[Findings & Insights](docs/FINDINGS.md)** - What we learned during development
 - **[Product Requirements Document](docs/PRD.md)** - Complete technical specification
 - **[Implementation Phases](docs/IMPLEMENTATION_PHASES.md)** - Step-by-step build guide
 - **[Testing Strategy](docs/TESTING_STRATEGY.md)** - Verification approaches
@@ -116,21 +118,29 @@ python -m pccs.main --save-frames output/
 ### The Reaction Cycle
 
 ```
-2A + C → B + ε    (φ ≈ 0)      Anabolism
-2B → C + ε        (φ ≈ 2π/3)   Catabolism  
-C + A → 2A        (φ ≈ 4π/3)   Autocatalysis
+2A → 2B           (φ ≈ 0)      Dimerization
+2B → A + C        (φ ≈ 2π/3)   Breakdown (releases catalyst)
+A + C → 2A        (φ ≈ 4π/3)   Autocatalysis
 ```
 
-Each reaction is **phase-gated**—it only fires efficiently when the cell's oscillator phase is near the target value.
+Each reaction is **phase-gated**—it only fires efficiently when the cell's oscillator phase is near the target value. The stoichiometry is mass-conserving: 2 molecules in → 2 molecules out.
 
 ### Emergent Phenomena
 
 With appropriate parameters, the system exhibits:
 
-1. **Phase Synchronization Domains** - Regions of coherent oscillation
-2. **Self-Maintaining Protocells** - Closed membrane structures with internal metabolism
-3. **Protocell Division** - Large cells becoming unstable and splitting
-4. **Ecological Dynamics** - Competition between protocells for resources
+1. **Spiral Wave Dynamics** - Phase oscillations self-organize into rotating spiral patterns
+2. **Phase Synchronization Domains** - Regions of coherent oscillation emerge from Kuramoto coupling
+3. **Protocells** - Closed membrane structures surrounding metabolically active regions
+4. **Multi-Protocell Coexistence** - Multiple protocells maintain separate boundaries
+
+| ![Spiral Waves](docs/assets/spiral_waves.gif) | ![Protocell](docs/assets/protocell_center.png) |
+|:---:|:---:|
+| Spiral wave dynamics | Single protocell |
+
+| ![Two Protocells](docs/assets/two_protocells.png) | ![Competing Protocells](docs/assets/competing_protocells.png) |
+|:---:|:---:|
+| Two independent protocells | Competing (close) protocells |
 
 ## Performance
 

@@ -198,6 +198,26 @@ class Simulation:
 
             A = A + rate * 5.0 * center_region.astype(mx.float32)
 
+        elif self.config.injection_mode == "competing":
+            # Two injection points at 1/3 and 2/3 across grid (closer than dual)
+            # Tests protocell interaction when close together
+            width = self.config.injection_width
+
+            y_coords = mx.arange(H).reshape(-1, 1)
+            x_coords = mx.arange(W).reshape(1, -1)
+
+            # Left center at 1/3
+            left_y, left_x = H // 2, W // 3
+            dist_left = (y_coords - left_y)**2 + (x_coords - left_x)**2
+            left_region = dist_left < width**2
+
+            # Right center at 2/3
+            right_y, right_x = H // 2, 2 * W // 3
+            dist_right = (y_coords - right_y)**2 + (x_coords - right_x)**2
+            right_region = dist_right < width**2
+
+            A = A + rate * 5.0 * (left_region | right_region).astype(mx.float32)
+
         return A
     
     def run(

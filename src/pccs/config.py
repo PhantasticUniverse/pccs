@@ -115,7 +115,7 @@ class Config:
         if not -1 < self.cos_thresh < 1:
             raise ValueError(f"cos_thresh must be in (-1, 1), got {self.cos_thresh}")
         
-        valid_modes = {"boundary", "uniform", "point_sources", "none"}
+        valid_modes = {"boundary", "uniform", "point_sources", "center", "none"}
         if self.injection_mode not in valid_modes:
             raise ValueError(f"injection_mode must be one of {valid_modes}, got {self.injection_mode}")
     

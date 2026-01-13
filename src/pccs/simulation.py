@@ -170,10 +170,10 @@ class Simulation:
         elif self.config.injection_mode == "point_sources":
             # Localized nutrient wells at corners
             width = self.config.injection_width
-            
+
             y_coords = mx.arange(H).reshape(-1, 1)
             x_coords = mx.arange(W).reshape(1, -1)
-            
+
             # Four corners
             corners = (
                 ((y_coords < width) & (x_coords < width)) |
@@ -181,9 +181,23 @@ class Simulation:
                 ((y_coords >= H - width) & (x_coords < width)) |
                 ((y_coords >= H - width) & (x_coords >= W - width))
             )
-            
+
             A = A + rate * 5.0 * corners.astype(mx.float32)
-        
+
+        elif self.config.injection_mode == "center":
+            # Inject A at grid center - creates protocell
+            width = self.config.injection_width
+            center_y, center_x = H // 2, W // 2
+
+            y_coords = mx.arange(H).reshape(-1, 1)
+            x_coords = mx.arange(W).reshape(1, -1)
+
+            # Circular region at center
+            dist_sq = (y_coords - center_y)**2 + (x_coords - center_x)**2
+            center_region = dist_sq < width**2
+
+            A = A + rate * 5.0 * center_region.astype(mx.float32)
+
         return A
     
     def run(

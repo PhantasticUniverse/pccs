@@ -99,9 +99,15 @@ class Simulation:
         
         # 5. Resource injection
         A = self._inject_resources(A)
-        
+
         # 6. Phase dynamics
-        dphase = compute_phase_update(self.state, self.config)
+        # Use post-diffusion concentrations for chemical-phase coupling
+        diffused_state = CellState(
+            A=A, B=B, C=C,
+            phase=self.state.phase,
+            bonds=self.state.bonds,
+        )
+        dphase = compute_phase_update(diffused_state, self.config)
         phase = self.state.phase + dphase
         
         # 7. Bond updates

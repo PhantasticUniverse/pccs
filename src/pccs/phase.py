@@ -76,7 +76,7 @@ def wrap_phase(phase: mx.array) -> mx.array:
         Phase wrapped to [0, 2π)
     """
     two_pi = 2.0 * mx.pi
-    return mx.mod(phase, two_pi)
+    return mx.remainder(phase, two_pi)
 
 
 def kuramoto_order_parameter(phase: mx.array) -> float:
@@ -106,35 +106,44 @@ def kuramoto_order_parameter(phase: mx.array) -> float:
 def local_order_parameter(phase: mx.array, window_size: int = 5) -> mx.array:
     """
     Compute local Kuramoto order parameter for each cell.
-    
+
     This measures synchronization in a local neighborhood.
-    
+
     Args:
         phase: Phase array [H, W]
         window_size: Size of local window
-    
+
     Returns:
         Local order parameter at each cell [H, W]
     """
-    # Convert to complex exponential
-    exp_i_phi = mx.exp(1j * phase.astype(mx.complex64))
-    
+    H, W = phase.shape
+
+    # Compute real and imaginary parts of exp(i*phi) separately
+    # (MLX conv2d doesn't support complex types)
+    cos_phi = mx.cos(phase)  # Real part: cos(phi)
+    sin_phi = mx.sin(phase)  # Imag part: sin(phi)
+
     # Create averaging kernel
+    # MLX conv2d expects: input (N, H, W, C), weight (C_out, H_k, W_k, C_in)
     kernel_size = window_size
-    kernel = mx.ones((1, 1, kernel_size, kernel_size), dtype=mx.complex64)
+    kernel = mx.ones((1, kernel_size, kernel_size, 1), dtype=mx.float32)
     kernel = kernel / (kernel_size * kernel_size)
-    
-    # Pad for convolution
+
+    # Manual wrap padding (MLX doesn't support mode="wrap")
     pad = kernel_size // 2
-    exp_padded = mx.pad(
-        exp_i_phi.reshape(1, 1, *exp_i_phi.shape),
-        [(0, 0), (0, 0), (pad, pad), (pad, pad)],
-        mode="wrap"
-    )
-    
-    # Compute local mean
-    local_mean = mx.conv2d(exp_padded, kernel, padding=0)
-    local_mean = local_mean.reshape(phase.shape)
-    
-    # Return magnitude
-    return mx.abs(local_mean).astype(mx.float32)
+
+    def wrap_and_convolve(arr: mx.array) -> mx.array:
+        """Apply wrap padding and convolve with averaging kernel."""
+        wrapped = mx.concatenate([arr[-pad:, :], arr, arr[:pad, :]], axis=0)
+        wrapped = mx.concatenate([wrapped[:, -pad:], wrapped, wrapped[:, :pad]], axis=1)
+        # Reshape to (N=1, H, W, C=1) for conv2d
+        padded = wrapped.reshape(1, H + 2 * pad, W + 2 * pad, 1)
+        result = mx.conv2d(padded, kernel, padding=0)
+        return result.reshape(H, W)
+
+    # Compute local mean of real and imaginary parts
+    local_cos = wrap_and_convolve(cos_phi)
+    local_sin = wrap_and_convolve(sin_phi)
+
+    # Return magnitude: |cos + i*sin| = sqrt(cos^2 + sin^2)
+    return mx.sqrt(local_cos * local_cos + local_sin * local_sin)

@@ -6,6 +6,7 @@ This creates membranes that naturally partition synchronized domains.
 """
 
 import mlx.core as mx
+import numpy as np
 
 from .config import Config
 from .state import CellState, NORTH, EAST, SOUTH, WEST, ensure_symmetric_bonds
@@ -189,17 +190,18 @@ def detect_closed_membranes(bonds: mx.array) -> list[set[tuple[int, int]]]:
     """
     # Find connected components
     labels = find_bond_clusters(bonds)
-    
-    # Get unique labels
-    unique_labels = mx.unique(labels)
-    
+
+    # Get unique labels (convert to numpy since MLX doesn't have unique)
+    labels_np = np.array(labels.tolist())
+    unique_labels = np.unique(labels_np)
+
     closed_membranes = []
-    
+
     # For each component, check if it forms a closed loop
     # A simple heuristic: if all cells in the component have exactly 2 bonds,
     # and the component has at least 4 cells, it's likely closed
-    
-    for label in unique_labels.tolist():
+
+    for label in unique_labels:
         mask = labels == label
         if mx.sum(mask) < 4:
             continue

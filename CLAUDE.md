@@ -43,7 +43,7 @@ pccs/
 │   ├── state.py         # CellState dataclass, grid initialization
 │   ├── config.py        # SimulationConfig with all parameters
 │   ├── diffusion.py     # Membrane-gated diffusion dynamics
-│   ├── reactions.py     # Phase-gated reaction system (A→B→C→A)
+│   ├── reactions.py     # Phase-gated reaction system (mass-conserving)
 │   ├── phase.py         # Kuramoto oscillator dynamics
 │   ├── bonds.py         # Bond formation/breaking logic
 │   ├── simulation.py    # Main simulation loop, update orchestration
@@ -59,8 +59,30 @@ pccs/
 
 1. **Three Substrates**: A (precursor), B (structural/membrane), C (catalyst/energy)
 2. **Phase Gating**: Reactions only fire when cell phase φ is near target values
-3. **Dual-Condition Bonds**: Require both B concentration AND phase alignment
+3. **B-Only Bonds**: Bonds form based on B concentration threshold (phase alignment removed - see FINDINGS.md)
 4. **Kuramoto Coupling**: Bonded cells synchronize phases more strongly
+
+## Reaction Stoichiometry (Mass-Conserving)
+
+```
+R1: 2A → 2B          (φ ≈ 0)      Dimerization
+R2: 2B → A + C       (φ ≈ 2π/3)   Breakdown
+R3: A + C → 2A       (φ ≈ 4π/3)   Autocatalysis
+```
+
+All reactions: 2 molecules in → 2 molecules out. Total mass conserved.
+
+## Injection Modes
+
+| Mode | Description |
+|------|-------------|
+| `boundary` | Inject A at grid edges → ring membrane |
+| `center` | Inject A at center → single protocell |
+| `dual` | Two points at 1/4 and 3/4 → two protocells |
+| `competing` | Two points at 1/3 and 2/3 → close protocells |
+| `point_sources` | Four corners |
+| `uniform` | Small constant everywhere |
+| `none` | No injection |
 
 ## Implementation Notes
 
@@ -85,6 +107,27 @@ python -m pccs.main --detect-membranes
 
 ## Common Issues
 
-- **Memory errors**: Reduce grid size from 256 to 128
+- **Memory errors**: Reduce grid size (32-48 works reliably for experiments, 64+ may hit GPU limits)
 - **Slow startup**: MLX compiles on first run, subsequent runs faster
 - **No GPU**: Check `python -c "import mlx.core as mx; print(mx.default_device())"`
+- **No closed membranes**: Ensure using B-only bonds (current default), not phase-aligned bonds
+
+## Working Parameters for Protocells
+
+```python
+Config(
+    grid_size=48,
+    injection_mode="center",  # or "competing", "dual"
+    injection_rate=0.02,
+    injection_width=3,
+    B_thresh=0.25,
+    k1=0.05, k2=0.05, k3=0.01,
+    epsilon=0.001,
+)
+```
+
+## Key Files
+
+- `docs/FINDINGS.md` - Development insights and what worked/didn't work
+- `docs/PRD.md` - Original design specification
+- `docs/assets/` - Visualizations (spiral_waves.gif, protocell_center.png, etc.)

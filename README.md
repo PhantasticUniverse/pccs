@@ -19,7 +19,9 @@ Real metabolism operates through precisely timed reaction cascades, not random d
 - **Phase-Gated Reactions**: Chemical reactions only proceed efficiently when the cell's internal oscillator is at the right phase
 - **Emergent Spiral Waves**: Phase dynamics naturally produce spiral wave patterns
 - **Protocell Formation**: B-concentration-based bonds create closed membrane structures
-- **Multi-Protocell Systems**: Multiple protocells can coexist and maintain boundaries
+- **Natural Division**: Protocells reproduce through budding without intervention
+- **Multi-Generation Lineages**: Mother → Daughter → Granddaughter demonstrated
+- **Selection & Evolution**: Competitive exclusion and parameter adaptation observed
 - **Kuramoto Synchronization**: Coupled oscillator dynamics create synchronized domains
 - **Apple Silicon Optimized**: Built on MLX for maximum performance on M-series chips
 
@@ -125,6 +127,16 @@ A + C → 2A        (φ ≈ 4π/3)   Autocatalysis
 
 Each reaction is **phase-gated**—it only fires efficiently when the cell's oscillator phase is near the target value. The stoichiometry is mass-conserving: 2 molecules in → 2 molecules out.
 
+### Membrane Formation
+
+Bonds form based on **B concentration only** (not phase alignment):
+
+```
+P_bond = sigmoid(θ_B × (B_i + B_j - 2×B_thresh))
+```
+
+This creates closed membranes at high-B regions, which follow the resource injection pattern. Key insight: phase-aligned bonds would form *inside* synchronized domains, but B-only bonds form at *boundaries* where B accumulates.
+
 ### Emergent Phenomena
 
 With appropriate parameters, the system exhibits:
@@ -138,9 +150,33 @@ With appropriate parameters, the system exhibits:
 |:---:|:---:|
 | Spiral wave dynamics | Single protocell |
 
-| ![Two Protocells](docs/assets/two_protocells.png) | ![Competing Protocells](docs/assets/competing_protocells.png) |
+| ![Natural Division](docs/assets/division/natural_step08000_008000_composite.png) | ![Three Generations](docs/assets/division/lineage_final_010000_composite.png) |
 |:---:|:---:|
-| Two independent protocells | Competing (close) protocells |
+| Natural budding (mother + daughter) | Three-generation lineage |
+
+| ![Evolution](docs/assets/division/evolution_trajectory.png) | ![Journey Summary](docs/assets/division/journey_summary.png) |
+|:---:|:---:|
+| B_thresh evolution over 50k steps | Complete evolutionary journey |
+
+### Demonstrated Capabilities
+
+PCCS has been experimentally verified to exhibit:
+
+| Capability | Evidence | Experiment |
+|------------|----------|------------|
+| **Spiral Wave Emergence** | Self-organizing rotating patterns | Phase dynamics |
+| **Protocell Formation** | Closed B-based membranes | Center injection |
+| **Natural Division (Budding)** | Mother spawns independent daughter | Exp 6 |
+| **Multi-Generation Lineages** | Mother → Daughter → Granddaughter | Exp 7 |
+| **Competitive Selection** | Winner-take-all under shared resources | Exp 8b |
+| **Heritable Fitness Variation** | B_thresh differences = 2.5-3.8x advantage | Exp 9 |
+| **Observable Evolution** | 18.8% B_thresh adaptation over 50k steps | Exp 10 |
+
+This represents a complete proof-of-concept for artificial life evolution from first principles:
+- Reproduction (budding)
+- Inheritance (spatial continuity)
+- Variation (mutation)
+- Selection (competition)
 
 ## Performance
 

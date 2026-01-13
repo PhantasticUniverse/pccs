@@ -715,3 +715,36 @@ The system now has all requirements for evolution:
 - System ready for more complex fitness landscapes with different environments
 
 The system can now undergo **open-ended evolution** - protocells can adapt to their environment over time through mutation and selection. This has been **rigorously validated** across multiple independent runs. The multi-parameter framework enables exploration of complex fitness landscapes, though the current environment produces a simpler landscape than hypothesized (monotonic for B_thresh, threshold-based for k1).
+
+---
+
+## Deeper Understanding (Independent Exploration)
+
+A separate Claude instance explored PCCS to understand *why* it works, not to extend it. Their findings clarify the mechanisms:
+
+### Phase Is Not Required for Membranes
+Protocells form with phase gating completely removed. Chemistry alone creates spatial structure. Phase adds temporal texture without changing spatial form.
+
+### Homeostasis Is Geometric
+The boundary position is set by diffusion length—a physical constant determined by kinetic parameters, not injection flux. More injection → higher peak → same drop-off distance. The protocell doesn't "regulate" its size; constancy emerges from reaction-diffusion mathematics.
+
+### Spirals Are Spatial Averaging
+Comparing uniform oscillation (CV = 10.5%), spiral waves (CV = 1.6%), and no phase (CV = 0.5%): spirals distribute the oscillation across space so global totals stay constant. Production and consumption balance at every moment because they occur in different locations.
+
+### Phase Provides Metabolic Regulation
+With phase gating: A:B:C = 1:1.00:2.47
+Without gating: A:B:C = 1:1.01:3.49
+
+Phase creates sequential metabolism—each reaction gets exclusive temporal access, preventing intermediate (C) accumulation.
+
+### Scaling Follows Kleiber's Law
+Protocell size scales sublinearly with resources: B ∝ rate^0.80
+
+This exponent is close to Kleiber's law in biology (metabolic rate ∝ mass^0.75). In biology, this is attributed to fractal distribution networks. In PCCS, it emerges from diffusion geometry plus nonlinear kinetics (B loss scales as B² through R2, creating metabolic overhead at larger sizes).
+
+### Confirmed: Phase Doesn't Prevent Merging
+Anti-phase protocells at close range still merge. Distance beyond diffusion range is what matters for individuality, not phase relationship.
+
+---
+
+*These insights were contributed by a separate Claude instance exploring PCCS in January 2026.*

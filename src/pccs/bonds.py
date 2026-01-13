@@ -5,6 +5,8 @@ Bonds require dual conditions: sufficient B concentration AND phase alignment.
 This creates membranes that naturally partition synchronized domains.
 """
 
+from typing import Optional, Union
+
 import mlx.core as mx
 import numpy as np
 
@@ -23,6 +25,7 @@ def compute_bond_probability(
     phase_i: mx.array,
     phase_j: mx.array,
     config: Config,
+    B_thresh_override: Optional[Union[mx.array, float]] = None,
 ) -> mx.array:
     """
     Compute bond formation/persistence probability.
@@ -39,13 +42,19 @@ def compute_bond_probability(
         phase_i: Phase at cell i (unused in B-only mode)
         phase_j: Phase at neighbor j (unused in B-only mode)
         config: Simulation configuration
+        B_thresh_override: Optional position-dependent threshold array or scalar.
+                          If provided, overrides config.B_thresh.
+                          Used for fitness experiments with asymmetric protocells.
 
     Returns:
         Bond probability at each cell
     """
+    # Use override if provided, otherwise global config
+    B_thresh = B_thresh_override if B_thresh_override is not None else config.B_thresh
+
     # B concentration condition ONLY
     B_sum = B_i + B_j
-    B_condition = sigmoid(config.theta_B * (B_sum - 2.0 * config.B_thresh))
+    B_condition = sigmoid(config.theta_B * (B_sum - 2.0 * B_thresh))
 
     # Phase alignment requirement REMOVED
     # Bonds can now form across phase boundaries
@@ -59,45 +68,56 @@ def compute_bond_updates(
 ) -> mx.array:
     """
     Compute probabilistic bond updates.
-    
-    Bonds form/persist when:
-        1. Both cells have high B concentration (≥ B_thresh)
-        2. Both cells have aligned phase (cos(Δφ) ≥ cos_thresh)
-    
-    The update is stochastic: bonds form/break with probability P.
-    
+
+    Bonds form/persist when both cells have high B concentration.
+    Uses per-cell B_thresh from state.B_thresh for evolution experiments.
+
+    For bonds between neighboring cells, the effective threshold is the
+    average of both cells' B_thresh values.
+
     Args:
-        state: Current cell state
+        state: Current cell state (includes per-cell B_thresh)
         config: Simulation configuration
         rng_key: Random key for stochastic updates
-    
+
     Returns:
         Updated bond states [H, W, 4]
     """
     H, W = state.shape
-    
+
     # Split key for each direction
     keys = mx.random.split(rng_key, 4)
-    
-    # Get neighbor values
+
+    # Get neighbor values for B concentration
     neighbor_B = {
         NORTH: mx.roll(state.B, shift=-1, axis=0),
         SOUTH: mx.roll(state.B, shift=1, axis=0),
         EAST: mx.roll(state.B, shift=-1, axis=1),
         WEST: mx.roll(state.B, shift=1, axis=1),
     }
-    
+
     neighbor_phase = {
         NORTH: mx.roll(state.phase, shift=-1, axis=0),
         SOUTH: mx.roll(state.phase, shift=1, axis=0),
         EAST: mx.roll(state.phase, shift=-1, axis=1),
         WEST: mx.roll(state.phase, shift=1, axis=1),
     }
-    
+
+    # Get neighbor B_thresh values for per-cell threshold averaging
+    neighbor_B_thresh = {
+        NORTH: mx.roll(state.B_thresh, shift=-1, axis=0),
+        SOUTH: mx.roll(state.B_thresh, shift=1, axis=0),
+        EAST: mx.roll(state.B_thresh, shift=-1, axis=1),
+        WEST: mx.roll(state.B_thresh, shift=1, axis=1),
+    }
+
     # Compute bond probabilities for each direction
     new_bonds = []
-    
+
     for i, direction in enumerate([NORTH, EAST, SOUTH, WEST]):
+        # Use average B_thresh of both cells for this bond
+        local_thresh = (state.B_thresh + neighbor_B_thresh[direction]) / 2.0
+
         # Get probability for this direction
         P = compute_bond_probability(
             state.B,
@@ -105,20 +125,21 @@ def compute_bond_updates(
             state.phase,
             neighbor_phase[direction],
             config,
+            B_thresh_override=local_thresh,
         )
-        
+
         # Stochastic update: bond exists if random < P
         random_vals = mx.random.uniform(0, 1, shape=(H, W), key=keys[i])
         bond = (random_vals < P).astype(mx.float32)
-        
+
         new_bonds.append(bond)
-    
+
     # Stack into [H, W, 4] array
     bonds = mx.stack(new_bonds, axis=-1)
-    
+
     # Ensure symmetry
     bonds = ensure_symmetric_bonds(bonds)
-    
+
     return bonds
 
 

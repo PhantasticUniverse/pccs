@@ -71,7 +71,18 @@ class Config:
     cos_thresh: float = 0.7
     theta_B: float = 10.0
     theta_phi: float = 10.0
-    
+
+    # Fitness experiments (position-dependent B_thresh)
+    fitness_mode: bool = False  # When True, left/right have different thresholds
+    strong_B_thresh: float = 0.20  # Left half ("Strong" - easier bond formation)
+    weak_B_thresh: float = 0.30  # Right half ("Weak" - harder bond formation)
+
+    # Mutation parameters (for evolution experiments)
+    mutation_rate: float = 0.0  # Probability of B_thresh mutation per cell per step
+    mutation_strength: float = 0.02  # Max size of B_thresh mutation (±)
+    B_thresh_min: float = 0.10  # Minimum allowed B_thresh after mutation
+    B_thresh_max: float = 0.50  # Maximum allowed B_thresh after mutation
+
     # Resource injection
     injection_mode: str = "boundary"
     injection_rate: float = 0.01
@@ -114,8 +125,16 @@ class Config:
         
         if not -1 < self.cos_thresh < 1:
             raise ValueError(f"cos_thresh must be in (-1, 1), got {self.cos_thresh}")
-        
-        valid_modes = {"boundary", "uniform", "point_sources", "center", "competing", "none"}
+
+        # Mutation parameter validation
+        if not 0 <= self.mutation_rate <= 1:
+            raise ValueError(f"mutation_rate must be in [0, 1], got {self.mutation_rate}")
+        if self.mutation_strength < 0:
+            raise ValueError(f"mutation_strength must be >= 0, got {self.mutation_strength}")
+        if not 0 < self.B_thresh_min < self.B_thresh_max < 1:
+            raise ValueError(f"B_thresh bounds must satisfy 0 < B_thresh_min < B_thresh_max < 1")
+
+        valid_modes = {"boundary", "uniform", "point_sources", "center", "competing", "budding", "lineage", "competition", "none"}
         if self.injection_mode not in valid_modes:
             raise ValueError(f"injection_mode must be one of {valid_modes}, got {self.injection_mode}")
     

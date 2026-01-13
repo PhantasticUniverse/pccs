@@ -88,6 +88,7 @@ class Simulation:
             A=A, B=B, C=C,
             phase=self.state.phase,
             bonds=self.state.bonds,
+            B_thresh=self.state.B_thresh,
         )
         
         # 3-4. Diffusion
@@ -106,6 +107,7 @@ class Simulation:
             A=A, B=B, C=C,
             phase=self.state.phase,
             bonds=self.state.bonds,
+            B_thresh=self.state.B_thresh,
         )
         dphase = compute_phase_update(diffused_state, self.config)
         phase = self.state.phase + dphase
@@ -116,19 +118,26 @@ class Simulation:
             A=A, B=B, C=C,
             phase=phase,
             bonds=self.state.bonds,
+            B_thresh=self.state.B_thresh,
         )
         bonds = compute_bond_updates(temp_state, self.config, step_key)
-        
-        # 8. Clamp concentrations
+
+        # 8. Apply mutations to B_thresh (if enabled)
+        B_thresh = self.state.B_thresh
+        if self.config.mutation_rate > 0:
+            self.rng_key, mutation_key = mx.random.split(self.rng_key)
+            B_thresh = self._apply_mutations(B_thresh, mutation_key)
+
+        # 9. Clamp concentrations
         A = mx.clip(A, 0.0, 1.0)
         B = mx.clip(B, 0.0, 1.0)
         C = mx.clip(C, 0.0, 1.0)
-        
-        # 9. Wrap phase
+
+        # 10. Wrap phase
         phase = wrap_phase(phase)
-        
+
         # Final state update
-        self.state = CellState(A=A, B=B, C=C, phase=phase, bonds=bonds)
+        self.state = CellState(A=A, B=B, C=C, phase=phase, bonds=bonds, B_thresh=B_thresh)
         self.step_count += 1
     
     def _inject_resources(self, A: mx.array) -> mx.array:
@@ -218,8 +227,120 @@ class Simulation:
 
             A = A + rate * 5.0 * (left_region | right_region).astype(mx.float32)
 
+        elif self.config.injection_mode == "budding":
+            # Mother at center, daughter offset to the right
+            # Used for protocell division experiments
+            width = self.config.injection_width
+            center_y, center_x = H // 2, W // 2
+            daughter_offset = 20  # Cells to the right - beyond diffusion range
+
+            y_coords = mx.arange(H).reshape(-1, 1)
+            x_coords = mx.arange(W).reshape(1, -1)
+
+            # Mother region (center)
+            dist_mother = (y_coords - center_y)**2 + (x_coords - center_x)**2
+            mother_region = dist_mother < width**2
+
+            # Daughter region (offset from center)
+            daughter_x = center_x + daughter_offset
+            dist_daughter = (y_coords - center_y)**2 + (x_coords - daughter_x)**2
+            daughter_region = dist_daughter < width**2
+
+            A = A + rate * 5.0 * (mother_region | daughter_region).astype(mx.float32)
+
+        elif self.config.injection_mode == "lineage":
+            # Three generations: mother, daughter, granddaughter
+            # Tests multi-generational protocell formation
+            width = self.config.injection_width
+            center_y, center_x = H // 2, W // 2
+            generation_offset = 20  # Distance between generations
+
+            y_coords = mx.arange(H).reshape(-1, 1)
+            x_coords = mx.arange(W).reshape(1, -1)
+
+            # Generation 0: Mother (center)
+            dist_mother = (y_coords - center_y)**2 + (x_coords - center_x)**2
+            mother_region = dist_mother < width**2
+
+            # Generation 1: Daughter (center + 20)
+            daughter_x = center_x + generation_offset
+            dist_daughter = (y_coords - center_y)**2 + (x_coords - daughter_x)**2
+            daughter_region = dist_daughter < width**2
+
+            # Generation 2: Granddaughter (center + 40)
+            granddaughter_x = center_x + 2 * generation_offset
+            dist_granddaughter = (y_coords - center_y)**2 + (x_coords - granddaughter_x)**2
+            granddaughter_region = dist_granddaughter < width**2
+
+            A = A + rate * 5.0 * (mother_region | daughter_region | granddaughter_region).astype(mx.float32)
+
+        elif self.config.injection_mode == "competition":
+            # Four protocells in diamond pattern for symmetric competition
+            # Tests resource scarcity and selection pressure
+            width = self.config.injection_width
+            center_y, center_x = H // 2, W // 2
+            spacing = 25  # Distance from center to each protocell
+
+            y_coords = mx.arange(H).reshape(-1, 1)
+            x_coords = mx.arange(W).reshape(1, -1)
+
+            # North protocell
+            dist_n = (y_coords - (center_y - spacing))**2 + (x_coords - center_x)**2
+            north_region = dist_n < width**2
+
+            # South protocell
+            dist_s = (y_coords - (center_y + spacing))**2 + (x_coords - center_x)**2
+            south_region = dist_s < width**2
+
+            # East protocell
+            dist_e = (y_coords - center_y)**2 + (x_coords - (center_x + spacing))**2
+            east_region = dist_e < width**2
+
+            # West protocell
+            dist_w = (y_coords - center_y)**2 + (x_coords - (center_x - spacing))**2
+            west_region = dist_w < width**2
+
+            A = A + rate * 5.0 * (north_region | south_region | east_region | west_region).astype(mx.float32)
+
         return A
-    
+
+    def _apply_mutations(self, B_thresh: mx.array, rng_key: mx.array) -> mx.array:
+        """
+        Apply stochastic mutations to B_thresh array.
+
+        Each cell has a probability (mutation_rate) of mutating its B_thresh
+        by a random amount in [-mutation_strength, +mutation_strength].
+
+        Args:
+            B_thresh: Current per-cell B_thresh values [H, W]
+            rng_key: Random key for stochastic operations
+
+        Returns:
+            Updated B_thresh array (clamped to valid range)
+        """
+        H, W = B_thresh.shape
+
+        # Generate mutation mask (which cells mutate this step)
+        rng_key, mask_key = mx.random.split(rng_key)
+        mutate_mask = mx.random.uniform(shape=(H, W), key=mask_key) < self.config.mutation_rate
+
+        # Generate mutation values (uniform in [-strength, +strength])
+        rng_key, delta_key = mx.random.split(rng_key)
+        delta = mx.random.uniform(
+            low=-self.config.mutation_strength,
+            high=self.config.mutation_strength,
+            shape=(H, W),
+            key=delta_key,
+        )
+
+        # Apply mutations where mask is True
+        B_thresh = B_thresh + mutate_mask * delta
+
+        # Clamp to valid range
+        B_thresh = mx.clip(B_thresh, self.config.B_thresh_min, self.config.B_thresh_max)
+
+        return B_thresh
+
     def run(
         self,
         steps: int,

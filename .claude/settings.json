@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$CLAUDE_FILE_PATHS\"; if [[ \"$file\" == *.py ]]; then ruff format \"$file\" 2>/dev/null; ruff check --fix \"$file\" 2>/dev/null; fi",
+            "timeout": 10000
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$CLAUDE_FILE_PATHS\"; if [[ \"$file\" == */test_*.py ]] || [[ \"$file\" == *_test.py ]]; then echo '🧪 Test file modified - consider running pytest'; fi",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); if [[ \"$branch\" == \"main\" || \"$branch\" == \"master\" ]]; then echo 'BLOCKED: Direct edits on main branch are not allowed. Please create a feature branch first: git checkout -b feature/<name>'; exit 2; fi",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}
